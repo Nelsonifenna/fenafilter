@@ -1,0 +1,105 @@
+import "server-only";
+import sharp from "sharp";
+import type { Extraction } from "../domain/schemas";
+import { AppError } from "../errors";
+import { extractJsonObject } from "../ai/json";
+import { geminiError, getGemini } from "../ai/gemini";
+import {
+  dedupeFixtures,
+  finalizeFixtures,
+  type PlacedFixture,
+  planTiles,
+  RawVisionSchema,
+  toPixelBox,
+  VISION_RESPONSE_SCHEMA,
+  VISION_SYSTEM_PROMPT,
+  VISION_USER_PROMPT,
+} from "./extraction";
+
+/**
+ * Gemini vision agent (uses the shared client in src/lib/ai/gemini.ts).
+ *
+ * Uses `models.generateContent` with `responseMimeType: "application/json"`
+ * + `responseJsonSchema` (verified in SDK 3.6.1 typings). Bounding boxes use
+ * Gemini’s native box_2d format [ymin, xmin, ymax, xmax] normalised to 0-1000
+ * and are converted back to pixel coordinates of the ORIGINAL image here.
+ */
+async function callGemini(image: Buffer, mimeType: string): Promise<unknown> {
+  const { ai, model } = getGemini();
+  let text: string | undefined;
+  try {
+    const res = await ai.models.generateContent({
+      model,
+      contents: [
+        {
+          role: "user",
+          parts: [{ inlineData: { mimeType, data: image.toString("base64") } }, { text: VISION_USER_PROMPT }],
+        },
+      ],
+      config: {
+        systemInstruction: VISION_SYSTEM_PROMPT,
+        responseMimeType: "application/json",
+        responseJsonSchema: VISION_RESPONSE_SCHEMA,
+        temperature: 0,
+      },
+    });
+    text = res.text;
+  } catch (e) {
+    throw geminiError(e, model);
+  }
+  if (!text) throw new AppError("AI_INVALID_RESPONSE", "The vision model returned no content (the image may have been blocked).");
+  try {
+    return JSON.parse(text);
+  } catch {
+    return extractJsonObject(text);
+  }
+}
+
+export async function extractFixtures(image: Buffer, width: number, height: number, onProgress?: (msg: string) => Promise<void>): Promise<Extraction> {
+  const { model } = getGemini();
+  const tiles = planTiles(width, height);
+  const placed: PlacedFixture[] = [];
+  const warnings = new Set<string>();
+  let isFootball = false;
+  const layouts: string[] = [];
+
+  for (let i = 0; i < tiles.length; i++) {
+    const tile = tiles[i]!;
+    if (tiles.length > 1) await onProgress?.(`Reading section ${i + 1} of ${tiles.length}`);
+    // PNG keeps text crisp; tiles are cropped from the original pixels.
+    const crop = tiles.length === 1 ? await sharp(image).png().toBuffer() : await sharp(image).extract({ left: 0, top: tile.top, width, height: tile.height }).png().toBuffer();
+    const raw = RawVisionSchema.safeParse(await callGemini(crop, "image/png"));
+    if (!raw.success) {
+      throw new AppError("AI_INVALID_RESPONSE", "The vision model returned an unexpected format. Please try again.");
+    }
+    isFootball ||= raw.data.is_football_fixture_image;
+    layouts.push(raw.data.layout);
+    raw.data.warnings.slice(0, 5).forEach((w) => warnings.add(w.slice(0, 200)));
+    for (const f of raw.data.fixtures) {
+      const box = toPixelBox(f.box_2d, tile, width);
+      if (!box) continue;
+      const edge = tile.height * 0.02;
+      const touches =
+        tiles.length > 1 &&
+        ((i > 0 && box.y - tile.top < edge) || (i < tiles.length - 1 && tile.top + tile.height - (box.y + box.height) < edge));
+      placed.push({ raw: f, box, tileIndex: i, touchesTileEdge: touches });
+    }
+  }
+
+  const merged = tiles.length > 1 ? dedupeFixtures(placed) : placed;
+  const { fixtures, warnings: w2 } = finalizeFixtures(merged, width, height);
+  w2.forEach((w) => warnings.add(w));
+  if (!isFootball) warnings.add("This does not look like a football fixtures screenshot.");
+  const layout = layouts.includes("grid") ? "grid" : layouts.includes("list") ? "list" : "other";
+
+  return {
+    model,
+    layout,
+    isFootballImage: isFootball,
+    imageWidth: width,
+    imageHeight: height,
+    tiles: tiles.length,
+    fixtures,
+    warnings: [...warnings],
+  };
+}
