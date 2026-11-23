@@ -172,3 +172,47 @@ describe("API-Football response handling", () => {
     expect(res[1]).toMatchObject({ venue: "home", goalsFor: 2, goalsAgainst: 1 });
   });
 });
+
+describe("real-world name mismatches seen in production", () => {
+  // Candidate lists shaped like the provider's real responses (fictional ids).
+  it("matches 'Derby County' to the first team stored as 'Derby', not reserve or women's sides", () => {
+    const r = resolveFromCandidates("Derby County", [
+      { id: 1, name: "Derby County Res.", country: "England", national: false, logo: null },
+      { id: 2, name: "Derby", country: "England", national: false, logo: null },
+      { id: 3, name: "Derby County W", country: "England", national: false, logo: null },
+      { id: 4, name: "Derby County U19", country: "England", national: false, logo: null },
+      { id: 5, name: "Derby County U23", country: "England", national: false, logo: null },
+    ]);
+    expect(r.status).toBe("matched");
+    expect(r.team?.id).toBe(2);
+  });
+
+  it("finds 'Wolverhampton Wanderers', which the provider stores as 'Wolves'", () => {
+    expect(searchTermFor("Wolverhampton Wanderers")).toBe("wolves");
+    const r = resolveFromCandidates("Wolverhampton Wanderers", [
+      { id: 39, name: "Wolves", country: "England", national: false, logo: null },
+      { id: 40, name: "Wolverhampton City", country: "England", national: false, logo: null },
+      { id: 41, name: "Wolverhampton W", country: "England", national: false, logo: null },
+    ]);
+    expect(r.status).toBe("matched");
+    expect(r.team?.id).toBe(39);
+  });
+
+  it("matches English names of clubs stored in the local language", () => {
+    const r = resolveFromCandidates("Slavia Prague", [
+      { id: 10, name: "Slavia Praha", country: "Czech-Republic", national: false, logo: null },
+      { id: 11, name: "Slavia Praha W", country: "Czech-Republic", national: false, logo: null },
+    ]);
+    expect(r.status).toBe("matched");
+    expect(r.team?.id).toBe(10);
+  });
+
+  it("never turns a different club with the same city into a match", () => {
+    const r = resolveFromCandidates("Manchester City", [
+      { id: 33, name: "Manchester United", country: "England", national: false, logo: null },
+      { id: 50, name: "Manchester City", country: "England", national: false, logo: null },
+    ]);
+    expect(r.team?.id).toBe(50);
+    expect(resolveFromCandidates("Bristol City", [{ id: 7, name: "Bristol Rovers", country: "England", national: false, logo: null }]).status).not.toBe("matched");
+  });
+});

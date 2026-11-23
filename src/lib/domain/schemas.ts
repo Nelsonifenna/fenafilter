@@ -252,6 +252,8 @@ export const EvidenceSchema = z.object({
   basis: z.string().nullable().optional(),
   /** Date of the most recent match in the sample. */
   asOf: z.string().nullable().optional(),
+  /** Which rule this evidence belongs to (for plain-language explanations). */
+  rule: z.enum(["remove", "keep"]).optional(),
 });
 export type Evidence = z.infer<typeof EvidenceSchema>;
 

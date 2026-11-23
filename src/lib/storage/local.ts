@@ -14,6 +14,25 @@ const EXT_TYPES: Record<string, string> = {
  * Development-only storage in a git-ignored folder (default ./.data).
  * Not usable on Vercel (the filesystem there is read-only/ephemeral).
  */
+/**
+ * On Windows, renaming onto a file that another write is replacing at the same moment
+ * fails briefly with EPERM/EBUSY/EACCES. Retry a few times; the last write wins, as on Linux.
+ */
+async function renameWithRetry(from: string, to: string) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fs.rename(from, to);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (attempt >= 8 || !["EPERM", "EBUSY", "EACCES"].includes(code ?? "")) {
+        await fs.rm(from, { force: true }).catch(() => {});
+        throw e;
+      }
+      await new Promise((r) => setTimeout(r, 15 * (attempt + 1)));
+    }
+  }
+}
+
 export class LocalObjectStore implements ObjectStore {
   readonly mode = "local" as const;
   constructor(private readonly root: string) {}
@@ -32,7 +51,7 @@ export class LocalObjectStore implements ObjectStore {
     // Write to a temp file then rename, so readers never see half-written JSON.
     const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
     await fs.writeFile(tmp, body);
-    await fs.rename(tmp, file);
+    await renameWithRetry(tmp, file);
     void contentType;
   }
 

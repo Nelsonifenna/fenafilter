@@ -470,7 +470,10 @@ export function evaluateFixture(fixture: Fixture, plan: FilterPlan, stats: Fixtu
   const decision = decide(plan.mode, r?.value, k?.value);
 
   const all = [...(r?.items ?? []), ...(k?.items ?? [])];
-  const evidence = all.flatMap((c) => c.result.evidence);
+  const evidence = [
+    ...(r?.items ?? []).flatMap((c) => c.result.evidence.map((e) => ({ ...e, rule: "remove" as const }))),
+    ...(k?.items ?? []).flatMap((c) => c.result.evidence.map((e) => ({ ...e, rule: "keep" as const }))),
+  ];
   const missing = Array.from(new Set(all.flatMap((c) => c.result.missing)));
   const checks = [...(r?.items ?? []).map((c) => toCheck("remove", c)), ...(k?.items ?? []).map((c) => toCheck("keep", c))];
   const reason = buildReason(plan, decision, r, k);

@@ -144,7 +144,7 @@ export function MatchDetails({ detail, stats }: { detail: MatchDetailView | unde
                 role="radio"
                 aria-checked={scope === s}
                 onClick={() => setScope(s)}
-                className={cn("px-2.5 py-1 font-mono text-[11px] transition-colors", scope === s ? "bg-fg text-ink" : "text-muted hover:text-fg")}
+                className={cn("min-h-9 px-3 text-[13px] transition-colors", scope === s ? "bg-fg text-ink" : "text-muted hover:text-fg")}
               >
                 {s === "venue" ? "Home and away" : "All matches"}
               </button>

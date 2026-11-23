@@ -20,8 +20,10 @@ const ALIASES: Record<string, string> = {
   "man city": "manchester city",
   "spurs": "tottenham",
   "tottenham hotspur": "tottenham",
-  "wolves": "wolverhampton",
-  "wolverhampton wanderers": "wolverhampton",
+  // The data provider stores the club as "Wolves", so search and match on that name.
+  "wolves": "wolves",
+  "wolverhampton wanderers": "wolves",
+  "wolverhampton": "wolves",
   "brighton hove albion": "brighton",
   "brighton and hove albion": "brighton",
   "newcastle utd": "newcastle",
@@ -63,6 +65,11 @@ const ALIASES: Record<string, string> = {
   "ajax amsterdam": "ajax",
   "psv eindhoven": "psv",
   "celtic glasgow": "celtic",
+  // English names for clubs the data provider stores in the local language
+  "slavia prague": "slavia praha",
+  "sparta prague": "sparta praha",
+  "red star belgrade": "crvena zvezda",
+  "bayer 04 leverkusen": "bayer leverkusen",
   "rangers glasgow": "rangers",
 };
 

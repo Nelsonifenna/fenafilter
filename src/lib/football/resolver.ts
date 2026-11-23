@@ -15,7 +15,9 @@ export interface SearchCandidate {
   logo: string | null;
 }
 
-const RESERVE_RE = /\b(u ?17|u ?18|u ?19|u ?20|u ?21|u ?23|women|w|ii|b|reserves|youth|academy|fem|femenino|feminine|frauen)\b/;
+const RESERVE_RE = /\b(u ?17|u ?18|u ?19|u ?20|u ?21|u ?23|women|w|ii|b|res|reserves|youth|academy|fem|femenino|feminine|frauen)\b/;
+/** Suffixes the data provider often drops from first-team names ("Derby County" is stored as "Derby"). */
+const GENERIC_SUFFIX = /\s(county|town|city|united|athletic|albion|rovers|wanderers)$/;
 
 export const MATCH_THRESHOLD = 0.85;
 export const FUZZY_THRESHOLD = 0.72;
@@ -27,6 +29,9 @@ export function scoreCandidates(query: string, candidates: SearchCandidate[], co
   return candidates
     .map((c) => {
       let s = similarity(query, c.name);
+      // "Derby County" → candidate "Derby": same club, short name. Only when the rest is a generic suffix.
+      const qCanon = canonicalName(query);
+      if (GENERIC_SUFFIX.test(qCanon) && canonicalName(c.name) === qCanon.replace(GENERIC_SUFFIX, "")) s = Math.max(s, 0.92);
       const cBasic = basicNormalize(c.name);
       if (!queryIsReserve && RESERVE_RE.test(cBasic)) s -= 0.3;
       if (c.national && canonicalName(c.name) !== canonicalName(query)) s -= 0.2;
