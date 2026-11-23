@@ -24,13 +24,12 @@ export function isValidJobId(id: string) {
 
 export function initialSteps(): Step[] {
   return [
-    { id: "upload", label: "Uploading image", state: "done", detail: null },
-    { id: "extract", label: "Reading football fixtures", state: "pending", detail: null },
-    { id: "interpret", label: "Understanding your instruction", state: "pending", detail: null },
-    { id: "teams", label: "Identifying teams", state: "pending", detail: null },
-    { id: "stats", label: "Retrieving football statistics", state: "pending", detail: null },
-    { id: "evaluate", label: "Evaluating your criteria", state: "pending", detail: null },
-    { id: "image", label: "Preparing filtered screenshot", state: "pending", detail: null },
+    { id: "upload", label: "Uploading screenshot", state: "done", detail: null },
+    { id: "extract", label: "Reading matches", state: "pending", detail: null },
+    { id: "interpret", label: "Applying your playbook", state: "pending", detail: null },
+    { id: "stats", label: "Identifying teams and fetching statistics", state: "pending", detail: null },
+    { id: "evaluate", label: "Filtering matches", state: "pending", detail: null },
+    { id: "image", label: "Preparing image", state: "pending", detail: null },
   ];
 }
 

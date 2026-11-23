@@ -96,7 +96,7 @@ export async function generateResilient(
  */
 export async function geminiChat(
   messages: ChatMessage[],
-  opts: { json?: boolean; maxTokens?: number; temperature?: number } = {},
+  opts: { json?: boolean; maxTokens?: number; temperature?: number; quick?: boolean } = {},
 ): Promise<string> {
   const { systemInstruction, contents } = toGeminiRequest(messages);
   const { res } = await generateResilient(
@@ -110,7 +110,8 @@ export async function geminiChat(
         ...(opts.json ? { responseMimeType: "application/json" } : {}),
       },
     }),
-    { timeoutMs: 45_000, deadlineMs: 90_000 },
+    // "quick" requests (optional extras such as summaries) must never hold up results.
+    opts.quick ? { timeoutMs: 15_000, deadlineMs: 20_000, attemptsPerModel: 1 } : { timeoutMs: 45_000, deadlineMs: 90_000 },
   );
   const text = res.text;
   if (!text) throw new AppError("AI_INVALID_RESPONSE", "The analysis returned no result. Please try again.", { internal: "Gemini returned an empty response" });

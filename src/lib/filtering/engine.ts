@@ -431,7 +431,26 @@ function because(c: Criterion, passed: boolean | null) {
   return `“${c.label}”${e ? ` (${describe(e)})` : ""}`;
 }
 
+/** A row whose team names could not be read reliably: never filtered automatically. */
+export function fixtureUnreadable(fixture: Pick<Fixture, "homeTeam" | "awayTeam" | "issues">): boolean {
+  if (!fixture.homeTeam.trim() || !fixture.awayTeam.trim()) return true;
+  return fixture.issues.some((i) => /could not be read|unreadable/i.test(i));
+}
+
 export function evaluateFixture(fixture: Fixture, plan: FilterPlan, stats: FixtureStats | null): Decision {
+  if (!fixture.excluded && fixtureUnreadable(fixture)) {
+    return {
+      fixtureId: fixture.id,
+      decision: "NEEDS_REVIEW",
+      engineDecision: "NEEDS_REVIEW",
+      overridden: false,
+      reason: "Review: the team names in this row could not be read reliably. Correct them to include this match in the filtering.",
+      evidence: [],
+      confidence: 0,
+      missingData: ["Team names could not be read reliably from the screenshot."],
+      checks: [],
+    };
+  }
   if (fixture.excluded) {
     return {
       fixtureId: fixture.id,

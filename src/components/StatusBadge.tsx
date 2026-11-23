@@ -4,11 +4,11 @@ import { Dot } from "./ui/primitives";
 const MAP: Record<JobStatus, { label: string; tone: "neutral" | "accent" | "danger" | "warn"; live?: boolean }> = {
   PENDING: { label: "Pending", tone: "neutral" },
   UPLOADING: { label: "Uploading", tone: "neutral", live: true },
-  EXTRACTING: { label: "Reading fixtures", tone: "neutral", live: true },
-  AWAITING_CONFIRMATION: { label: "Awaiting your review", tone: "warn" },
+  EXTRACTING: { label: "Reading matches", tone: "neutral", live: true },
+  AWAITING_CONFIRMATION: { label: "Needs your input", tone: "warn" },
   FETCHING_STATISTICS: { label: "Fetching statistics", tone: "neutral", live: true },
-  ANALYSING: { label: "Analysing", tone: "neutral", live: true },
-  PROCESSING_IMAGE: { label: "Editing image", tone: "neutral", live: true },
+  ANALYSING: { label: "Filtering matches", tone: "neutral", live: true },
+  PROCESSING_IMAGE: { label: "Preparing image", tone: "neutral", live: true },
   COMPLETED: { label: "Completed", tone: "accent" },
   FAILED: { label: "Failed", tone: "danger" },
 };
@@ -23,6 +23,8 @@ export function StatusBadge({ status }: { status: JobStatus }) {
   );
 }
 
-export function jobHref(id: string, status: JobStatus) {
-  return status === "COMPLETED" ? `/results/${id}` : `/analyze/${id}`;
+/** Every analysis opens on its results page, which shows live progress until it is finished. */
+export function jobHref(id: string, _status?: JobStatus) {
+  void _status;
+  return `/results/${id}`;
 }

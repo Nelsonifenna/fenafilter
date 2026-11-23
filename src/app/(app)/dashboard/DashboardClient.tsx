@@ -47,13 +47,20 @@ export function DashboardClient() {
       const imageKey = await uploadImage(file, session, (pct) => setPhase({ kind: "uploading", pct }));
       setPhase({ kind: "starting" });
       const { id } = await api.startAnalysis({ imageKey, instruction: instruction.trim(), originalName: file.name, plan: usingPlaybook?.plan });
-      router.push(`/analyze/${id}`);
+      // Straight to results: progress shows there and the pipeline runs on its own.
+      router.push(`/results/${id}`);
     } catch (e) {
       setPhase({ kind: "error", message: e instanceof ApiError ? e.message : "Upload failed. Please try again." });
     }
   }
 
-  const hint = !file ? "Load a screenshot to continue." : instruction.trim().length < 3 ? "Write an instruction to continue." : "Fixtures are read first. You review them before any statistics are fetched.";
+  const hint = !file
+    ? "Load a screenshot to continue."
+    : instruction.trim().length < 3
+      ? "Write an instruction or choose a saved playbook."
+      : usingPlaybook
+        ? `Runs “${usingPlaybook.name}” automatically, from reading the matches to the filtered image.`
+        : "Runs automatically, from reading the matches to the filtered image. You only step in if something is unclear.";
 
   return (
     <div className="space-y-14">
@@ -120,9 +127,9 @@ export function DashboardClient() {
           </section>
 
           <section aria-labelledby="run-title">
-            <SectionHead index="03" label="Run" title={<span id="run-title">Read the fixtures</span>} className="mb-6" />
+            <SectionHead index="03" label="Run" title={<span id="run-title">Analyze and filter</span>} className="mb-6" />
             <Button size="lg" className="w-full" onClick={analyse} disabled={!canSubmit} loading={busy}>
-              {phase.kind === "uploading" ? `Uploading ${Math.round(phase.pct)}%` : phase.kind === "starting" ? "Starting analysis" : (<>Analyse screenshot <ArrowRight className="size-4" aria-hidden /></>)}
+              {phase.kind === "uploading" ? `Uploading ${Math.round(phase.pct)}%` : phase.kind === "starting" ? "Starting analysis" : (<>Analyze and Filter <ArrowRight className="size-4" aria-hidden /></>)}
             </Button>
             <p className="mt-3 text-[13px] text-muted">{hint}</p>
             {phase.kind === "error" && <Notice tone="danger" className="mt-4">{phase.message}</Notice>}

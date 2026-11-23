@@ -344,5 +344,9 @@ export const JobSchema = z.object({
   lease: z.object({ until: z.string() }).nullable(),
   /** Scheduled automatic retry after a temporary AI overload (optional for older records). */
   retry: z.object({ count: z.number().int(), at: z.string() }).nullable().optional(),
+  /** Plain-language notes about the run as a whole (e.g. statistics limit reached). */
+  notices: z.array(z.string()).optional(),
+  /** Fixtures whose statistics could not be loaded; they are evaluated as REVIEW, not retried forever. */
+  statsUnavailable: z.array(z.string()).optional(),
 });
 export type Job = z.infer<typeof JobSchema>;

@@ -42,7 +42,8 @@ export const api = {
   startAnalysis: (data: { imageKey: string; instruction: string; originalName?: string; plan?: FilterPlan }) => request<{ id: string }>("/api/analyze", jsonInit("POST", data)),
   job: (id: string) => request<JobView>(`/api/analyze/${id}`),
   confirm: (id: string, fixtures: Fixture[], plan: FilterPlan) => request<JobView>(`/api/analyze/${id}/confirm`, jsonInit("POST", { fixtures, plan })),
-  reinterpret: (id: string, instruction: string) => request<JobView>(`/api/analyze/${id}/instruction`, jsonInit("POST", { instruction })),
+  /** autoContinue true: once understood, the analysis runs to completion automatically. */
+  reinterpret: (id: string, instruction: string, autoContinue = true) => request<JobView>(`/api/analyze/${id}/instruction`, jsonInit("POST", { instruction, autoContinue })),
   process: (jobId: string, decisions: Record<string, DecisionValue>) => request<JobView>("/api/process", jsonInit("POST", { jobId, decisions })),
   history: () => request<{ items: JobSummaryView[] }>("/api/history"),
   deleteJob: (id: string) => request<{ deleted: boolean }>(`/api/history/${id}`, { method: "DELETE" }),

@@ -5,7 +5,7 @@ import { extractJsonObject } from "../ai/json";
 import { getEnv } from "../config/env";
 import type { Decision, Job } from "../domain/schemas";
 import { AppError, logError } from "../errors";
-import { evaluateFixture, fixtureNeedsStatistics, planDataNeeds } from "../filtering/engine";
+import { evaluateFixture, fixtureNeedsStatistics, fixtureUnreadable, planDataNeeds } from "../filtering/engine";
 import { describeCondition } from "../filtering/plan-validation";
 import { FootballApiError, publicFootballMessage } from "../football/api-football";
 import { collectFixtureStats } from "../football/service";
@@ -31,6 +31,7 @@ const LEASE_MS = 270_000;
 const running = new Set<string>(); // in-process guard against double scheduling
 
 export const RUNNABLE: Job["status"][] = ["EXTRACTING", "FETCHING_STATISTICS", "ANALYSING", "PROCESSING_IMAGE"];
+const ANALYSIS_STATES: Job["status"][] = ["FETCHING_STATISTICS", "ANALYSING", "PROCESSING_IMAGE"];
 
 export function needsWorker(job: Job): boolean {
   if (!RUNNABLE.includes(job.status)) return false;
@@ -55,9 +56,9 @@ export async function advance(ownerId: string, jobId: string): Promise<void> {
     if (!job || !needsWorkerIgnoringLocal(job)) return;
     job = await saveJob({ ...job, lease: { until: new Date(Date.now() + LEASE_MS).toISOString() } });
 
-    if (job.status === "EXTRACTING") {
-      job = await extractionPhase(job);
-    } else {
+    // Stages run back to back in one worker run; nothing waits for a click.
+    if (job.status === "EXTRACTING") job = await extractionPhase(job);
+    if (job && ANALYSIS_STATES.includes(job.status) && Date.now() - started < WORK_BUDGET_MS) {
       job = await analysisPhase(job, started);
     }
     if (job) await persist({ ...job, lease: null, retry: null });
@@ -69,10 +70,11 @@ export async function advance(ownerId: string, jobId: string): Promise<void> {
     const retry = job && transient && job.status === "EXTRACTING" ? nextJobRetry(job.retry, Date.now()) : null;
     if (job && retry) {
       console.warn(`[fenafilter] job ${jobId}: temporary AI overload, automatic retry ${retry.count} scheduled for ${retry.at}`);
-      await persist(setStep({ ...job, lease: null, retry }, "extract", "active", retryMessage(retry, Date.now()))).catch(() => undefined);
+      const stage = job.steps.find((st) => st.state === "active")?.id ?? "extract";
+      await persist(setStep({ ...job, lease: null, retry }, stage, "active", retryMessage(retry, Date.now()))).catch(() => undefined);
     } else if (job) {
       const message = e instanceof AppError && e.expose ? e.message : e instanceof FootballApiError ? publicFootballMessage(e) : "The analysis failed unexpectedly. Please try again.";
-      const activeStep = job.steps.find((s) => s.state === "active")?.id;
+      const activeStep = job.steps.find((st) => st.state === "active")?.id;
       let failed: Job = { ...job, status: "FAILED", error: { code: e instanceof AppError ? e.code : "INTERNAL", message }, lease: null };
       if (activeStep) failed = setStep(failed, activeStep, "failed", message);
       await persist(failed).catch(() => undefined);
@@ -81,7 +83,6 @@ export async function advance(ownerId: string, jobId: string): Promise<void> {
     running.delete(jobId);
   }
 }
-
 function needsWorkerIgnoringLocal(job: Job) {
   return RUNNABLE.includes(job.status) && !retryPending(job.retry, Date.now()) && (!job.lease || new Date(job.lease.until).getTime() < Date.now());
 }
@@ -92,94 +93,108 @@ async function extractionPhase(job: Job): Promise<Job | null> {
   const stored = await getStore().get(job.image.key);
   if (!stored) throw new AppError("NOT_FOUND", "The uploaded image could not be found. Please upload it again.");
 
-  job = setStep(job, "extract", "active");
-  if (!job.plan) job = setStep(job, "interpret", "active");
+  // 1. Read the screenshot (only this stage is shown as live).
+  if (!job.extraction) job = setStep(job, "extract", "active");
   const saved = await persist(job);
   if (!saved) return null;
   job = saved;
-
-  // Vision and instruction parsing are independent — run them in parallel.
-  const [extraction, planResult] = await Promise.allSettled([
-    extractFixtures(stored.body, job.image.width, job.image.height, async (msg) => {
+  // An automatic retry after a busy AI service does not re-read a screenshot that was already read.
+  const ex =
+    job.extraction ??
+    (await extractFixtures(stored.body, job.image.width, job.image.height, async (msg) => {
       const j = await loadJob(job.ownerId, job.id);
       if (j) await saveJob(setStep(j, "extract", "active", msg));
-    }),
-    // A previous attempt may already have interpreted the instruction; do not repeat it.
-    job.plan ? Promise.resolve({ plan: job.plan, error: null }) : interpretInstruction(job.instruction),
-  ]);
+    }));
   const fresh = await loadJob(job.ownerId, job.id);
   if (!fresh) return null;
-  job = { ...fresh, lease: job.lease };
+  const unclear = ex.fixtures.filter((fx) => fixtureUnreadable(fx)).length;
+  job = setStep({ ...fresh, lease: job.lease, extraction: ex }, "extract", "done", `${ex.fixtures.length} match${ex.fixtures.length === 1 ? "" : "es"} found${unclear ? `, ${unclear} hard to read` : ""}`);
 
-  if (extraction.status === "rejected") {
-    // Keep a successful interpretation so an automatic retry only re-reads the screenshot.
-    if (planResult.status === "fulfilled" && planResult.value.plan && !job.plan) {
-      const plan = planResult.value.plan;
-      await persist(setStep({ ...job, plan, planError: null }, "interpret", plan.status === "ok" ? "done" : "waiting", plan.status === "ok" ? plan.summary.slice(0, 160) : "Clarification needed"));
+  // 2. Apply the playbook: a saved plan is used as is; otherwise interpret the instruction.
+  if (!job.plan) {
+    job = setStep(job, "interpret", "active");
+    const p = await persist(job);
+    if (!p) return null;
+    job = p;
+    const result = await interpretInstruction(job.instruction).catch((e) => {
+      // A busy AI service is retried automatically (job-level retry), not turned into a question.
+      if (e instanceof AppError && (e.details as { transient?: boolean } | undefined)?.transient) throw e;
+      return { plan: null, error: e instanceof AppError ? e.message : "Your instruction could not be interpreted." };
+    });
+    if (result.plan) {
+      job = { ...job, plan: result.plan, planError: null };
+    } else {
+      job = { ...job, plan: null, planError: result.error };
     }
-    throw extraction.reason;
   }
-  const ex = extraction.value;
-  const lowConf = ex.fixtures.filter((f) => f.issues.length > 0).length;
-  job = {
-    ...job,
-    extraction: ex,
-    status: "AWAITING_CONFIRMATION",
-  };
-  job = setStep(job, "extract", "done", `${ex.fixtures.length} fixture(s) found${lowConf ? `, ${lowConf} need checking` : ""}`);
-
-  if (planResult.status === "rejected") {
-    const msg = planResult.reason instanceof AppError ? planResult.reason.message : "Instruction could not be interpreted.";
-    job = setStep({ ...job, plan: null, planError: msg }, "interpret", "failed", msg);
-  } else if (planResult.value.plan) {
-    const plan = planResult.value.plan;
-    job = setStep({ ...job, plan, planError: null }, "interpret", plan.status === "ok" ? "done" : "waiting", plan.status === "ok" ? plan.summary.slice(0, 160) : "Clarification needed");
-  } else {
-    job = setStep({ ...job, plan: null, planError: planResult.value.error }, "interpret", "failed", planResult.value.error);
-  }
-  job = setStep(job, "teams", "waiting", "Waiting for you to confirm the fixtures");
-  return job;
+  return continueOrAsk(job);
 }
 
+/**
+ * Exception-based review: continue automatically unless the whole analysis
+ * genuinely cannot proceed (instruction not understood, or no matches read).
+ * Problems with individual fixtures never stop the run; they become REVIEW.
+ */
+export function continueOrAsk(job: Job): Job {
+  const plan = job.plan;
+  const active = (job.extraction?.fixtures ?? []).filter((fx) => !fx.excluded);
+  if (!plan || plan.status !== "ok") {
+    const why = plan?.status === "needs_clarification" ? "A quick question about your instruction" : job.planError ?? "Your instruction could not be interpreted.";
+    return setStep({ ...job, status: "AWAITING_CONFIRMATION" }, "interpret", "waiting", why);
+  }
+  // Keep a "Saved playbook" label set when the job was created from a saved playbook.
+  const interpret = job.steps.find((st) => st.id === "interpret");
+  if (!(interpret?.state === "done" && interpret.detail?.startsWith("Saved playbook"))) job = setStep(job, "interpret", "done", plan.summary.slice(0, 160));
+  if (active.length === 0) {
+    return setStep({ ...job, status: "AWAITING_CONFIRMATION" }, "extract", "waiting", "No matches could be read from this screenshot");
+  }
+  return setStep({ ...job, status: "FETCHING_STATISTICS", fixturesConfirmed: true, error: null }, "stats", "active", "Starting");
+}
 /* ------------------------------------------------------------------ */
 
 async function analysisPhase(job: Job, started: number): Promise<Job | null> {
   if (!job.plan || !job.extraction) throw new AppError("CONFLICT", "The analysis is missing its plan or fixtures.");
   const plan = job.plan;
-  const fixtures = job.extraction.fixtures.filter((f) => !f.excluded);
+  const fixtures = job.extraction.fixtures.filter((fx) => !fx.excluded);
 
   if (job.status === "FETCHING_STATISTICS") {
     const needs = planDataNeeds(plan);
-    const needing = fixtures.filter((f) => fixtureNeedsStatistics(needs, f));
+    // Unreadable rows go to REVIEW without spending statistics requests on them.
+    const needing = fixtures.filter((fx) => fixtureNeedsStatistics(needs, fx) && !fixtureUnreadable(fx));
     if (needing.length > 0) {
-      const pending = needing.filter((f) => !job.stats[f.id]);
-      for (const f of pending) {
-        if (Date.now() - started > WORK_BUDGET_MS) {
-          return job; // lease released by caller; next poll resumes
-        }
-        const done = Object.keys(job.stats).length;
-        job = setStep(job, "teams", "active", `${f.homeTeam} vs ${f.awayTeam}`);
-        job = setStep(job, "stats", "active", `${done} of ${needing.length} fixtures`);
+      const skip = new Set(job.statsUnavailable ?? []);
+      const pending = needing.filter((fx) => !job.stats[fx.id] && !skip.has(fx.id));
+      let stop = false;
+      for (const fx of pending) {
+        if (Date.now() - started > WORK_BUDGET_MS) return job; // lease released by caller; next poll resumes
+        const position = needing.indexOf(fx) + 1;
+        job = setStep(job, "stats", "active", `${fx.homeTeam} v ${fx.awayTeam} (${position} of ${needing.length})`);
         const p = await persist(job);
         if (!p) return null;
         job = p;
         try {
-          const stats = await collectFixtureStats(f, { home: f.teamIds?.home ?? undefined, away: f.teamIds?.away ?? undefined }, needs);
-          job = { ...job, stats: { ...job.stats, [f.id]: stats } };
+          const stats = await collectFixtureStats(fx, { home: fx.teamIds?.home ?? undefined, away: fx.teamIds?.away ?? undefined }, needs);
+          job = { ...job, stats: { ...job.stats, [fx.id]: stats } };
         } catch (e) {
           if (e instanceof FootballApiError && e.kind === "rate_minute") return job; // resume after the limit resets
-          throw e;
+          logError(`job ${job.id} statistics for ${fx.id}`, e);
+          if (e instanceof FootballApiError && (e.kind === "quota_daily" || e.kind === "auth")) {
+            // Every remaining request would fail the same way: stop fetching, finish with what we have.
+            job = { ...job, notices: [...new Set([...(job.notices ?? []), publicFootballMessage(e)])] };
+            stop = true;
+          }
+          job = { ...job, statsUnavailable: [...new Set([...(job.statsUnavailable ?? []), fx.id])] };
         }
+        if (stop) break;
       }
-      const all = Object.values(job.stats);
-      const unresolved = all.reduce((n, s) => n + (s.home.resolution.status !== "matched" ? 1 : 0) + (s.away.resolution.status !== "matched" ? 1 : 0), 0);
-      job = setStep(job, "teams", "done", unresolved ? `${unresolved} team(s) need review` : `All ${all.length * 2} teams identified`);
-      job = setStep(job, "stats", "done", `Recent results for ${all.length} fixture(s)`);
+      const checked = Object.keys(job.stats).filter((id) => needing.some((fx) => fx.id === id));
+      const unresolved = checked.reduce((n, id) => n + (job.stats[id]!.home.resolution.status !== "matched" ? 1 : 0) + (job.stats[id]!.away.resolution.status !== "matched" ? 1 : 0), 0);
+      const missing = needing.length - checked.length;
+      job = setStep(job, "stats", "done", [`${checked.length} of ${needing.length} matches checked`, unresolved ? `${unresolved} team${unresolved === 1 ? "" : "s"} uncertain` : null, missing ? `${missing} without statistics` : null].filter(Boolean).join(" · "));
     } else {
-      job = setStep(setStep(job, "teams", "skipped", "Not needed for this instruction"), "stats", "skipped", "Not needed for this instruction");
+      job = setStep(job, "stats", "skipped", "Not needed for your rules");
     }
-    job = { ...job, status: "ANALYSING" };
-    job = setStep(job, "evaluate", "active");
+    job = setStep({ ...job, status: "ANALYSING" }, "evaluate", "active");
     const p = await persist(job);
     if (!p) return null;
     job = p;
@@ -187,17 +202,15 @@ async function analysisPhase(job: Job, started: number): Promise<Job | null> {
 
   if (job.status === "ANALYSING") {
     const previous = new Map((job.decisions ?? []).map((d) => [d.fixtureId, d]));
-    const decisions: Decision[] = job.extraction!.fixtures.map((f) => {
-      const d = evaluateFixture(f, plan, job.stats[f.id] ?? null);
-      const prev = previous.get(f.id);
+    const decisions: Decision[] = job.extraction!.fixtures.map((fx) => {
+      const d = evaluateFixture(fx, plan, job.stats[fx.id] ?? null);
+      const prev = previous.get(fx.id);
       return prev?.overridden ? { ...d, decision: prev.decision, overridden: true } : d;
     });
     const count = (v: string) => decisions.filter((d) => d.decision === v).length;
-    job = { ...job, decisions };
+    job = { ...job, decisions, summary: null };
     job = setStep(job, "evaluate", "done", `${count("KEEP")} keep · ${count("REMOVE")} remove · ${count("NEEDS_REVIEW")} review`);
-    job.summary = await summarise(job).catch(() => null);
-    job = { ...job, status: "PROCESSING_IMAGE" };
-    job = setStep(job, "image", "active");
+    job = setStep({ ...job, status: "PROCESSING_IMAGE" }, "image", "active");
     const p = await persist(job);
     if (!p) return null;
     job = p;
@@ -205,11 +218,19 @@ async function analysisPhase(job: Job, started: number): Promise<Job | null> {
 
   if (job.status === "PROCESSING_IMAGE") {
     job = await renderOutput(job);
-    job = { ...job, status: "COMPLETED" };
+    // Results are ready now; the optional written summary must not delay them.
+    const done = await persist({ ...job, status: "COMPLETED", lease: null, retry: null });
+    if (!done) return null;
+    const summary = await summarise(done).catch(() => null);
+    if (summary) {
+      // Re-read so a decision override made in the meantime is never overwritten.
+      const latest = await loadJob(done.ownerId, done.id);
+      if (latest && latest.status === "COMPLETED") await saveJob({ ...latest, summary });
+    }
+    return null; // already saved
   }
   return job;
 }
-
 /** Generate the edited screenshot from the current decisions (NEEDS_REVIEW is kept, never silently deleted). */
 export async function renderOutput(job: Job): Promise<Job> {
   if (!job.extraction || !job.decisions) throw new AppError("CONFLICT", "There are no decisions to apply yet.");
@@ -268,7 +289,7 @@ async function summarise(job: Job): Promise<{ text: string; model: string } | nu
       },
       { role: "user", content: `<data>\n${JSON.stringify(data)}\n</data>` },
     ],
-    { maxTokens: 1500, temperature: 0.2 },
+    { maxTokens: 1500, temperature: 0.2, quick: true },
   );
   let text = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
   if (text.startsWith("{")) {

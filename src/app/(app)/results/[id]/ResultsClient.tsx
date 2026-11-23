@@ -2,11 +2,12 @@
 
 import { ArrowLeft, Download, Expand } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ImageWithBoxes } from "@/components/analysis/ImageWithBoxes";
 import { InstructionBox } from "@/components/dashboard/InstructionBox";
 import { DecisionRow } from "@/components/results/DecisionCard";
+import { AdvancedLink, CorrectionsPanel, FailedView, NeedsInputView, RunView } from "@/components/results/RunStates";
 import { Button, ButtonLink, buttonClass, cn, Kicker, Notice, Skeleton } from "@/components/ui/primitives";
 import { api, ApiError } from "@/lib/client/api";
 import { savePlaybook } from "@/lib/client/playbooks";
@@ -18,8 +19,7 @@ const VIEW_LABEL: Record<View, string> = { compare: "Before and after", original
 
 export function ResultsClient() {
   const { id } = useParams<{ id: string }>();
-  const router = useRouter();
-  const { job, error, replace } = useJob(id);
+  const { job, error, replace, reload } = useJob(id);
   // Only the user’s pending changes are stored; everything else is derived from the job.
   const [overrides, setOverrides] = useState<Record<string, DecisionValue>>({});
   const [view, setView] = useState<View>("compare");
@@ -31,9 +31,16 @@ export function ResultsClient() {
   const [playbookName, setPlaybookName] = useState("");
   const [playbookMsg, setPlaybookMsg] = useState<string | null>(null);
 
+  // The written summary is finished after the results; fetch it a few times if it is still on its way.
+  const [summaryPolls, setSummaryPolls] = useState(0);
+  const awaitingSummary = Boolean(job && job.status === "COMPLETED" && !job.summary && job.plan);
   useEffect(() => {
-    if (job && job.status !== "COMPLETED") router.replace(`/analyze/${job.id}`);
-  }, [job, router]);
+    if (!awaitingSummary || summaryPolls >= 6) return;
+    const t = setTimeout(() => {
+      void reload().then(() => setSummaryPolls((n) => n + 1));
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [awaitingSummary, summaryPolls, reload]);
 
   const fixtureById = useMemo(() => new Map((job?.extraction?.fixtures ?? []).map((f) => [f.id, f])), [job?.extraction?.fixtures]);
   const detailById = useMemo(() => new Map((job?.details ?? []).map((d) => [d.fixtureId, d])), [job?.details]);
@@ -48,6 +55,11 @@ export function ResultsClient() {
       </div>
     );
   }
+  if (job && ["PENDING", "UPLOADING", "EXTRACTING", "FETCHING_STATISTICS", "ANALYSING", "PROCESSING_IMAGE"].includes(job.status)) {
+    return <RunView job={job} />;
+  }
+  if (job?.status === "AWAITING_CONFIRMATION") return <NeedsInputView job={job} onUpdate={replace} />;
+  if (job?.status === "FAILED") return <FailedView job={job} onUpdate={replace} />;
   if (!job || job.status !== "COMPLETED" || !job.decisions || !job.extraction) {
     return (
       <div className="space-y-6">
@@ -89,10 +101,11 @@ export function ResultsClient() {
     setBusy("reanalyse");
     setActionError(null);
     try {
-      await api.confirm(job!.id, fixtures, job!.plan);
-      router.push(`/analyze/${job!.id}`);
+      replace(await api.confirm(job!.id, fixtures, job!.plan));
+      setOverrides({});
     } catch (e) {
       setActionError(e instanceof ApiError ? e.message : "Could not restart the analysis.");
+    } finally {
       setBusy(null);
     }
   }
@@ -101,10 +114,13 @@ export function ResultsClient() {
     setBusy("instruction");
     setActionError(null);
     try {
-      await api.reinterpret(job!.id, instruction.trim());
-      router.push(`/analyze/${job!.id}`);
+      // Runs straight through again with the new instruction; progress shows here.
+      replace(await api.reinterpret(job!.id, instruction.trim(), true));
+      setEditing(false);
+      setOverrides({});
     } catch (e) {
       setActionError(e instanceof ApiError ? e.message : "Could not interpret the instruction.");
+    } finally {
       setBusy(null);
     }
   }
@@ -162,8 +178,9 @@ export function ResultsClient() {
             <ArrowLeft className="size-3.5" aria-hidden /> History
           </Link>
           <h1 className="mt-3 font-display text-title font-bold uppercase">Filtered screenshot</h1>
-          <p className="mt-2 font-mono text-[12px] text-faint">
-            Ref {job.id.slice(0, 8)} · {new Date(job.createdAt).toLocaleString()}
+          <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[12px] text-faint">
+            <span>Ref {job.id.slice(0, 8)} · {new Date(job.createdAt).toLocaleString()}</span>
+            <AdvancedLink id={job.id} />
           </p>
         </div>
         <div className="flex flex-wrap gap-2 lg:col-span-6 lg:justify-end">
@@ -174,11 +191,17 @@ export function ResultsClient() {
           )}
           <Button variant="secondary" onClick={() => { if (!editing) setInstruction(job.instruction); setEditing((e) => !e); }} aria-expanded={editing}>Edit instruction</Button>
           <Button variant="secondary" onClick={() => reanalyse()} loading={busy === "reanalyse"}>Reanalyse</Button>
-          <ButtonLink href="/dashboard" variant="ghost">New analysis</ButtonLink>
+          <ButtonLink href="/dashboard" variant="ghost">Analyze another screenshot</ButtonLink>
         </div>
       </header>
 
       {actionError && <Notice tone="danger">{actionError}</Notice>}
+      {job.notices && job.notices.length > 0 && (
+        <Notice tone="warn" title="Some matches could not be checked">
+          <ul className="space-y-0.5">{job.notices.map((n) => <li key={n}>{n}</li>)}</ul>
+        </Notice>
+      )}
+      <CorrectionsPanel job={job} onUpdate={(j) => { replace(j); setOverrides({}); }} />
 
       <div className="reveal" data-open={editing}>
         <div inert={!editing}>
@@ -189,9 +212,9 @@ export function ResultsClient() {
                 <InstructionBox id="results-instruction" value={instruction} onChange={setInstruction} disabled={busy !== null} showExamples={false} />
               </div>
               <div className="lg:col-span-4 lg:col-start-9">
-                <p className="text-sm text-muted">You will review the new rules, with the same fixtures, before the analysis runs again.</p>
+                <p className="text-sm text-muted">The same matches are filtered again with your new instruction. It runs automatically.</p>
                 <div className="mt-4 flex gap-2">
-                  <Button onClick={submitInstruction} loading={busy === "instruction"} disabled={instruction.trim().length < 3}>Interpret and review</Button>
+                  <Button onClick={submitInstruction} loading={busy === "instruction"} disabled={instruction.trim().length < 3}>Run again</Button>
                   <Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
                 </div>
               </div>

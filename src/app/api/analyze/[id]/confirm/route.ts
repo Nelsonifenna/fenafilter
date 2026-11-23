@@ -49,9 +49,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/analyze/[id]/co
       ids.add(f.id);
       const homeTeam = sanitizeExtractedText(f.homeTeam);
       const awayTeam = sanitizeExtractedText(f.awayTeam);
-      if (!f.excluded && (!homeTeam || !awayTeam)) {
-        throw new AppError("BAD_REQUEST", `Fixture ${f.id} is missing a team name. Fix it or mark it as "not a fixture".`);
-      }
+      // Rows without readable names are allowed: they are evaluated as REVIEW and stay in the image.
       const x = Math.min(Math.max(0, f.box.x), W - 1);
       const y = Math.min(Math.max(0, f.box.y), H - 1);
       const prev = previous.get(f.id);
@@ -86,6 +84,10 @@ export async function POST(req: Request, ctx: RouteContext<"/api/analyze/[id]/co
       output: null,
       error: null,
       status: "FETCHING_STATISTICS",
+      // A re-run checks previously failed fixtures again.
+      statsUnavailable: [],
+      notices: [],
+      retry: null,
       lease: null,
     };
     job = setStep(job, "interpret", "done", v.plan.summary.slice(0, 160));

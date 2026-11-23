@@ -30,13 +30,17 @@ export function AnalyzeClient() {
   const [busy, setBusy] = useState<"confirm" | "reinterpret" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const fixtures: Fixture[] | null = fixtureDraft ?? (job?.status === "AWAITING_CONFIRMATION" ? job.extraction?.fixtures ?? null : null);
+  // Optional advanced editor: available for finished, paused or failed analyses that have been read.
+  const editable = Boolean(job?.extraction && job && ["AWAITING_CONFIRMATION", "COMPLETED", "FAILED"].includes(job.status));
+  const fixtures: Fixture[] | null = fixtureDraft ?? (editable ? job?.extraction?.fixtures ?? null : null);
   const plan: FilterPlan | null = planDraft ?? job?.plan ?? null;
   const instruction = instructionDraft ?? job?.instruction ?? "";
 
   useEffect(() => {
-    if (job?.status === "COMPLETED") router.replace(`/results/${job.id}`);
-  }, [job?.status, job?.id, router]);
+    // While the pipeline is running, progress lives on the results page.
+    const status = job?.status;
+    if (status && ["EXTRACTING", "FETCHING_STATISTICS", "ANALYSING", "PROCESSING_IMAGE"].includes(status)) router.replace(`/results/${id}`);
+  }, [job?.status, id, router]);
 
   const overlay: OverlayItem[] = useMemo(
     () =>
@@ -72,7 +76,7 @@ export function AnalyzeClient() {
     );
   }
 
-  const awaiting = job.status === "AWAITING_CONFIRMATION";
+  const awaiting = editable;
   const needsClarification = plan?.status === "needs_clarification";
   const missingNames = (fixtures ?? []).some((f) => !f.excluded && (!f.homeTeam.trim() || !f.awayTeam.trim()));
   const activeFixtures = (fixtures ?? []).filter((f) => !f.excluded).length;
@@ -85,6 +89,7 @@ export function AnalyzeClient() {
     setActionError(null);
     try {
       replace(await api.confirm(job!.id, fx, pl));
+      router.push(`/results/${job!.id}`);
     } catch (e) {
       setActionError(e instanceof ApiError ? e.message : "Could not start the analysis.");
     } finally {
@@ -96,7 +101,8 @@ export function AnalyzeClient() {
     setBusy("reinterpret");
     setActionError(null);
     try {
-      const j = await api.reinterpret(job!.id, instruction.trim());
+      // Advanced editor: show the new rules here for adjustment instead of running straight away.
+      const j = await api.reinterpret(job!.id, instruction.trim(), false);
       replace(j);
       setPlan(null); // show the fresh server interpretation
       setInstruction(null);
@@ -115,7 +121,7 @@ export function AnalyzeClient() {
           <Link href="/dashboard" className="inline-flex items-center gap-1.5 font-mono text-[12px] text-muted transition-colors hover:text-fg">
             <ArrowLeft className="size-3.5" aria-hidden /> Workspace
           </Link>
-          <h1 className="mt-3 font-display text-title font-bold uppercase">{awaiting ? "Review the read" : "Analysis"}</h1>
+          <h1 className="mt-3 font-display text-title font-bold uppercase">{awaiting ? "Adjust matches and rules" : "Analysis"}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-[12px] text-muted">
           <span>Ref {job.id.slice(0, 8)}</span>
