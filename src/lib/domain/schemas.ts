@@ -274,5 +274,7 @@ export const JobSchema = z.object({
   output: OutputSchema.nullable(),
   /** Background-work lease, so a crashed worker can be resumed by the next poll. */
   lease: z.object({ until: z.string() }).nullable(),
+  /** Scheduled automatic retry after a temporary AI overload (optional for older records). */
+  retry: z.object({ count: z.number().int(), at: z.string() }).nullable().optional(),
 });
 export type Job = z.infer<typeof JobSchema>;

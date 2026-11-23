@@ -13,6 +13,7 @@ import { renderFiltered } from "../imaging/compose";
 import { getStore, keys } from "../storage";
 import { extractFixtures } from "../vision/gemini";
 import { loadJob, saveJob, setStep } from "./repository";
+import { nextJobRetry, retryMessage, retryPending } from "./retry";
 
 /**
  * JOB PIPELINE
@@ -34,6 +35,7 @@ export const RUNNABLE: Job["status"][] = ["EXTRACTING", "FETCHING_STATISTICS", "
 export function needsWorker(job: Job): boolean {
   if (!RUNNABLE.includes(job.status)) return false;
   if (running.has(job.id)) return false;
+  if (retryPending(job.retry, Date.now())) return false;
   return !job.lease || new Date(job.lease.until).getTime() < Date.now();
 }
 
@@ -58,11 +60,17 @@ export async function advance(ownerId: string, jobId: string): Promise<void> {
     } else {
       job = await analysisPhase(job, started);
     }
-    if (job) await persist({ ...job, lease: null });
+    if (job) await persist({ ...job, lease: null, retry: null });
   } catch (e) {
     logError(`job ${jobId}`, e);
     const job = await loadJob(ownerId, jobId).catch(() => null);
-    if (job) {
+    // Temporary AI overload while reading the screenshot: wait and resume on a later poll.
+    const transient = e instanceof AppError && (e.details as { transient?: boolean } | undefined)?.transient === true;
+    const retry = job && transient && job.status === "EXTRACTING" ? nextJobRetry(job.retry, Date.now()) : null;
+    if (job && retry) {
+      console.warn(`[fenafilter] job ${jobId}: temporary AI overload, automatic retry ${retry.count} scheduled for ${retry.at}`);
+      await persist(setStep({ ...job, lease: null, retry }, "extract", "active", retryMessage(retry, Date.now()))).catch(() => undefined);
+    } else if (job) {
       const message = e instanceof AppError && e.expose ? e.message : e instanceof FootballApiError ? publicFootballMessage(e) : "The analysis failed unexpectedly. Please try again.";
       const activeStep = job.steps.find((s) => s.state === "active")?.id;
       let failed: Job = { ...job, status: "FAILED", error: { code: e instanceof AppError ? e.code : "INTERNAL", message }, lease: null };
@@ -75,7 +83,7 @@ export async function advance(ownerId: string, jobId: string): Promise<void> {
 }
 
 function needsWorkerIgnoringLocal(job: Job) {
-  return RUNNABLE.includes(job.status) && (!job.lease || new Date(job.lease.until).getTime() < Date.now());
+  return RUNNABLE.includes(job.status) && !retryPending(job.retry, Date.now()) && (!job.lease || new Date(job.lease.until).getTime() < Date.now());
 }
 
 /* ------------------------------------------------------------------ */
@@ -84,7 +92,8 @@ async function extractionPhase(job: Job): Promise<Job | null> {
   const stored = await getStore().get(job.image.key);
   if (!stored) throw new AppError("NOT_FOUND", "The uploaded image could not be found. Please upload it again.");
 
-  job = setStep(setStep(job, "extract", "active"), "interpret", "active");
+  job = setStep(job, "extract", "active");
+  if (!job.plan) job = setStep(job, "interpret", "active");
   const saved = await persist(job);
   if (!saved) return null;
   job = saved;
@@ -95,13 +104,21 @@ async function extractionPhase(job: Job): Promise<Job | null> {
       const j = await loadJob(job.ownerId, job.id);
       if (j) await saveJob(setStep(j, "extract", "active", msg));
     }),
-    interpretInstruction(job.instruction),
+    // A previous attempt may already have interpreted the instruction; do not repeat it.
+    job.plan ? Promise.resolve({ plan: job.plan, error: null }) : interpretInstruction(job.instruction),
   ]);
   const fresh = await loadJob(job.ownerId, job.id);
   if (!fresh) return null;
   job = { ...fresh, lease: job.lease };
 
-  if (extraction.status === "rejected") throw extraction.reason;
+  if (extraction.status === "rejected") {
+    // Keep a successful interpretation so an automatic retry only re-reads the screenshot.
+    if (planResult.status === "fulfilled" && planResult.value.plan && !job.plan) {
+      const plan = planResult.value.plan;
+      await persist(setStep({ ...job, plan, planError: null }, "interpret", plan.status === "ok" ? "done" : "waiting", plan.status === "ok" ? plan.summary.slice(0, 160) : "Clarification needed"));
+    }
+    throw extraction.reason;
+  }
   const ex = extraction.value;
   const lowConf = ex.fixtures.filter((f) => f.issues.length > 0).length;
   job = {

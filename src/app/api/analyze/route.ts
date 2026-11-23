@@ -59,6 +59,7 @@ export async function POST(req: Request) {
       summary: null,
       output: null,
       lease: null,
+      retry: null,
     };
     await saveJob(job);
     after(() => advance(ownerId, job.id));

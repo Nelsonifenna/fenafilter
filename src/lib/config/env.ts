@@ -1,6 +1,7 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
+import { parseModelList } from "../ai/resilience";
 
 /**
  * Centralised, validated server-side configuration.
@@ -28,6 +29,9 @@ const schema = z.object({
   // Default gemini-3.1-flash-lite: listed by Google as supporting text + image
   // input with free-tier access. Override with GEMINI_MODEL.
   GEMINI_MODEL: optionalString,
+  // Comma-separated models tried when the main model is overloaded, retired or out of quota.
+  // Default: gemini-3.5-flash-lite. Set to "none" to disable fallbacks.
+  GEMINI_FALLBACK_MODELS: optionalString,
 
   API_FOOTBALL_KEY: optionalString,
   API_FOOTBALL_BASE_URL: optionalString,
@@ -43,7 +47,7 @@ const schema = z.object({
 });
 
 export type ServerEnv = {
-  gemini: { apiKey?: string; model: string };
+  gemini: { apiKey?: string; model: string; fallbackModels: string[] };
   football: { apiKey?: string; baseUrl: string; enablePredictions: boolean };
   blob: { token?: string };
   sessionSecret: string;
@@ -115,7 +119,11 @@ export function getEnv(): ServerEnv {
   });
 
   cached = {
-    gemini: { apiKey: e.GEMINI_API_KEY, model: e.GEMINI_MODEL ?? "gemini-3.1-flash-lite" },
+    gemini: {
+      apiKey: e.GEMINI_API_KEY,
+      model: e.GEMINI_MODEL ?? "gemini-3.1-flash-lite",
+      fallbackModels: parseModelList(e.GEMINI_FALLBACK_MODELS, ["gemini-3.5-flash-lite"]),
+    },
     football: {
       apiKey: e.API_FOOTBALL_KEY,
       baseUrl: e.API_FOOTBALL_BASE_URL ?? "https://v3.football.api-sports.io",
@@ -141,7 +149,7 @@ export function getEnv(): ServerEnv {
 export function getServiceStatus() {
   const env = getEnv();
   return {
-    gemini: { configured: Boolean(env.gemini.apiKey), model: env.gemini.model },
+    gemini: { configured: Boolean(env.gemini.apiKey), model: env.gemini.model, fallbackModels: env.gemini.fallbackModels },
     football: { configured: Boolean(env.football.apiKey), predictions: env.football.enablePredictions },
     storage: { mode: env.blob.token ? ("vercel-blob" as const) : ("local" as const) },
   };

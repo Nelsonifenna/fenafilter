@@ -5,7 +5,7 @@ import { AppError } from "../errors";
 
 const UNREADABLE = "This screenshot could not be read. Please try again, or use a clearer image.";
 import { extractJsonObject } from "../ai/json";
-import { geminiError, getGemini } from "../ai/gemini";
+import { generateResilient } from "../ai/gemini";
 import {
   dedupeFixtures,
   finalizeFixtures,
@@ -26,12 +26,10 @@ import {
  * Gemini’s native box_2d format [ymin, xmin, ymax, xmax] normalised to 0-1000
  * and are converted back to pixel coordinates of the ORIGINAL image here.
  */
-async function callGemini(image: Buffer, mimeType: string): Promise<unknown> {
-  const { ai, model } = getGemini();
-  let text: string | undefined;
-  try {
-    const res = await ai.models.generateContent({
-      model,
+async function callGemini(image: Buffer, mimeType: string): Promise<{ data: unknown; model: string }> {
+  const { res, model } = await generateResilient(
+    "vision",
+    () => ({
       contents: [
         {
           role: "user",
@@ -44,21 +42,29 @@ async function callGemini(image: Buffer, mimeType: string): Promise<unknown> {
         responseJsonSchema: VISION_RESPONSE_SCHEMA,
         temperature: 0,
       },
-    });
-    text = res.text;
-  } catch (e) {
-    throw geminiError(e, model);
-  }
-  if (!text) throw new AppError("AI_INVALID_RESPONSE", UNREADABLE, { internal: "Vision model returned no content (possibly blocked)" });
+    }),
+    { timeoutMs: 60_000, deadlineMs: 100_000 },
+  );
+  const text = res.text;
+  if (!text) throw new AppError("AI_INVALID_RESPONSE", UNREADABLE, { internal: `Vision model ${model} returned no content (possibly blocked)` });
   try {
-    return JSON.parse(text);
+    return { data: JSON.parse(text), model };
   } catch {
-    return extractJsonObject(text);
+    return { data: extractJsonObject(text), model };
   }
 }
 
+/**
+ * Prepare the PNG sent for one tile. Applies EXIF orientation first, so tile
+ * coordinates (computed from the displayed size) match the pixels being cropped.
+ */
+export async function prepareTileImage(image: Buffer, tile: { top: number; height: number }, width: number, single: boolean): Promise<Buffer> {
+  const oriented = sharp(image).rotate();
+  return single ? oriented.png().toBuffer() : oriented.extract({ left: 0, top: tile.top, width, height: tile.height }).png().toBuffer();
+}
+
 export async function extractFixtures(image: Buffer, width: number, height: number, onProgress?: (msg: string) => Promise<void>): Promise<Extraction> {
-  const { model } = getGemini();
+  const modelsUsed = new Set<string>();
   const tiles = planTiles(width, height);
   const placed: PlacedFixture[] = [];
   const warnings = new Set<string>();
@@ -69,8 +75,10 @@ export async function extractFixtures(image: Buffer, width: number, height: numb
     const tile = tiles[i]!;
     if (tiles.length > 1) await onProgress?.(`Reading section ${i + 1} of ${tiles.length}`);
     // PNG keeps text crisp; tiles are cropped from the original pixels.
-    const crop = tiles.length === 1 ? await sharp(image).png().toBuffer() : await sharp(image).extract({ left: 0, top: tile.top, width, height: tile.height }).png().toBuffer();
-    const raw = RawVisionSchema.safeParse(await callGemini(crop, "image/png"));
+    const crop = await prepareTileImage(image, tile, width, tiles.length === 1);
+    const result = await callGemini(crop, "image/png");
+    modelsUsed.add(result.model);
+    const raw = RawVisionSchema.safeParse(result.data);
     if (!raw.success) {
       throw new AppError("AI_INVALID_RESPONSE", UNREADABLE, { internal: "Vision model output failed schema validation" });
     }
@@ -95,7 +103,7 @@ export async function extractFixtures(image: Buffer, width: number, height: numb
   const layout = layouts.includes("grid") ? "grid" : layouts.includes("list") ? "list" : "other";
 
   return {
-    model,
+    model: [...modelsUsed].join(", "),
     layout,
     isFootballImage: isFootball,
     imageWidth: width,
