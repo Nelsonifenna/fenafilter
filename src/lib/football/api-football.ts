@@ -2,6 +2,7 @@ import "server-only";
 import { cached, cacheKey } from "../cache";
 import { getEnv } from "../config/env";
 import { AppError, USER_MESSAGES } from "../errors";
+import { getStore, keys } from "../storage";
 
 /**
  * API-Football v3 client (direct API-Sports subscription).
@@ -118,6 +119,52 @@ async function rawGet<T>(path: string, params: Record<string, string | number>):
   throw new FootballApiError("API-Football per-minute rate limit kept being exceeded.", "rate_minute");
 }
 
+/* ------------------------------------------------------------------ */
+/* Plan restrictions                                                   */
+/* ------------------------------------------------------------------ */
+/*
+ * Verified live (Nov 2026): the free plan rejects the "last" parameter
+ * ("Free plans do not have access to the Last parameter") and recent seasons
+ * ("…do not have access to this season, try from 2022 to 2024"). Rejected
+ * requests are not cached and still use quota, so restrictions are remembered
+ * for a day and not requested again.
+ */
+const PLAN_TTL_MS = 24 * 3600_000;
+const blocked = new Map<string, number>();
+
+/** "param:last" or "season:2026" — derived from the provider's plan message. */
+export function planRestrictionKey(e: FootballApiError, season?: number): string | null {
+  if (e.kind !== "plan") return null;
+  const m = e.message.toLowerCase();
+  if (m.includes("last parameter")) return "param:last";
+  if (m.includes("season") && season !== undefined) return `season:${season}`;
+  return null;
+}
+
+export async function isPlanBlocked(key: string): Promise<boolean> {
+  const now = Date.now();
+  const mem = blocked.get(key);
+  if (mem !== undefined) return mem > now;
+  try {
+    const obj = await getStore().get(keys.cache("football-plan", cacheKey(key)));
+    const until = obj ? Number(JSON.parse(obj.body.toString("utf8")).until) : 0;
+    blocked.set(key, until);
+    return until > now;
+  } catch {
+    return false;
+  }
+}
+
+export async function markPlanBlocked(key: string): Promise<void> {
+  const until = Date.now() + PLAN_TTL_MS;
+  blocked.set(key, until);
+  try {
+    await getStore().put(keys.cache("football-plan", cacheKey(key)), JSON.stringify({ key, until }), "application/json", { ttlDays: 1 });
+  } catch {
+    /* memory copy still prevents repeats on this instance */
+  }
+}
+
 const HOUR = 3600;
 const DAY = 86400;
 
@@ -132,4 +179,8 @@ export const footballApi = {
   seasonFixtures: (teamId: number, season: number) => apiGet<ApiFixture>("/fixtures", { team: teamId, season }, 6 * HOUR),
   nextFixtures: (teamId: number, n = 5) => apiGet<ApiFixture>("/fixtures", { team: teamId, next: n }, 6 * HOUR),
   prediction: (fixtureId: number) => apiGet<ApiPrediction>("/predictions", { fixture: fixtureId }, 6 * HOUR),
+  /** Previous meetings between two clubs (all competitions). */
+  headToHead: (teamA: number, teamB: number) => apiGet<ApiFixture>("/fixtures/headtohead", { h2h: `${teamA}-${teamB}` }, 12 * HOUR),
+  /** Every fixture of a league season (one request per league, shared by all fixtures in it). */
+  leagueFixtures: (leagueId: number, season: number) => apiGet<ApiFixture>("/fixtures", { league: leagueId, season }, 12 * HOUR),
 };

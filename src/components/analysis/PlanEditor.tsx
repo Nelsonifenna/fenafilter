@@ -122,6 +122,11 @@ function ConditionView({ c, path, onValue, disabled }: { c: Condition; path: num
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
         <span className="font-medium">{label}</span>
         {c.subject !== "match" && <span className="text-muted">· {SUBJECT[c.subject]}</span>}
+        {(c.window || c.lastN) && (
+          <span className="font-mono text-[11px] text-faint">
+            {[c.window === "overall" ? "all matches" : c.window === "venue" ? "home or away games" : null, c.lastN ? `last ${c.lastN}` : null].filter(Boolean).join(", ")}
+          </span>
+        )}
         <span className="ml-auto flex items-center gap-1.5">
           <span className="font-mono text-muted" aria-label={CMP_LABEL[c.comparator]}>{CMP[c.comparator]}</span>
           <input

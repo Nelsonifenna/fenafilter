@@ -5,7 +5,7 @@ import { extractJsonObject } from "../ai/json";
 import { getEnv } from "../config/env";
 import type { Decision, Job } from "../domain/schemas";
 import { AppError, logError } from "../errors";
-import { evaluateFixture, planNeedsStatistics } from "../filtering/engine";
+import { evaluateFixture, fixtureNeedsStatistics, planDataNeeds } from "../filtering/engine";
 import { describeCondition } from "../filtering/plan-validation";
 import { FootballApiError, publicFootballMessage } from "../football/api-football";
 import { collectFixtureStats } from "../football/service";
@@ -149,20 +149,22 @@ async function analysisPhase(job: Job, started: number): Promise<Job | null> {
   const fixtures = job.extraction.fixtures.filter((f) => !f.excluded);
 
   if (job.status === "FETCHING_STATISTICS") {
-    if (planNeedsStatistics(plan)) {
-      const pending = fixtures.filter((f) => !job.stats[f.id]);
+    const needs = planDataNeeds(plan);
+    const needing = fixtures.filter((f) => fixtureNeedsStatistics(needs, f));
+    if (needing.length > 0) {
+      const pending = needing.filter((f) => !job.stats[f.id]);
       for (const f of pending) {
         if (Date.now() - started > WORK_BUDGET_MS) {
           return job; // lease released by caller; next poll resumes
         }
         const done = Object.keys(job.stats).length;
         job = setStep(job, "teams", "active", `${f.homeTeam} vs ${f.awayTeam}`);
-        job = setStep(job, "stats", "active", `${done} of ${fixtures.length} fixtures`);
+        job = setStep(job, "stats", "active", `${done} of ${needing.length} fixtures`);
         const p = await persist(job);
         if (!p) return null;
         job = p;
         try {
-          const stats = await collectFixtureStats(f, { home: f.teamIds?.home ?? undefined, away: f.teamIds?.away ?? undefined });
+          const stats = await collectFixtureStats(f, { home: f.teamIds?.home ?? undefined, away: f.teamIds?.away ?? undefined }, needs);
           job = { ...job, stats: { ...job.stats, [f.id]: stats } };
         } catch (e) {
           if (e instanceof FootballApiError && e.kind === "rate_minute") return job; // resume after the limit resets

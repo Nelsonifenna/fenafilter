@@ -67,6 +67,13 @@ export const MetricConditionSchema = z.object({
   sourcePhrase: z.string().max(200).optional(),
   /** True when the threshold was inferred from vague wording ("high", "poor"). */
   thresholdInferred: z.boolean().optional(),
+  /**
+   * Team metrics only. "venue" (default): home team's home games, away team's away games.
+   * "overall": all recent matches in every competition.
+   */
+  window: z.enum(["venue", "overall"]).optional(),
+  /** Team metrics only: use only the most recent N matches of the window (e.g. "last 6"). */
+  lastN: z.number().int().min(3).max(20).optional(),
 });
 
 export const TeamConditionSchema = z.object({
@@ -111,6 +118,11 @@ export const FilterPlanSchema = z.object({
   summary: z.string().max(600),
   assumptions: z.array(z.string().max(300)).max(10),
   unsupported: z.array(z.string().max(300)).max(10),
+  /**
+   * Smallest number of matches a historical figure may be based on. Below it the
+   * condition is "unknown" and the fixture goes to REVIEW. Default 5.
+   */
+  minSample: z.number().int().min(3).max(30).optional(),
 });
 export type FilterPlan = z.infer<typeof FilterPlanSchema>;
 
@@ -126,6 +138,10 @@ export const RecentMatchSchema = z.object({
   opponent: z.string(),
   goalsFor: z.number().int(),
   goalsAgainst: z.number().int(),
+  /** Competition identity (optional for records saved before league analysis existed). */
+  leagueId: z.number().int().optional(),
+  country: z.string().nullable().optional(),
+  season: z.number().int().optional(),
 });
 export type RecentMatch = z.infer<typeof RecentMatchSchema>;
 
@@ -157,6 +173,20 @@ export const TeamDataSchema = z.object({
 });
 export type TeamData = z.infer<typeof TeamDataSchema>;
 
+export const LeagueStatsSchema = z.object({
+  matches: z.number().int(),
+  avgGoals: z.number(),
+  homeGoalsAvg: z.number(),
+  awayGoalsAvg: z.number(),
+  bttsRate: z.number(),
+  over05Rate: z.number(),
+  over15Rate: z.number(),
+  over25Rate: z.number(),
+  over35Rate: z.number(),
+  dataAsOf: z.string().nullable(),
+});
+export type LeagueStats = z.infer<typeof LeagueStatsSchema>;
+
 export const FixtureStatsSchema = z.object({
   fixtureId: z.string(),
   home: TeamDataSchema,
@@ -170,6 +200,31 @@ export const FixtureStatsSchema = z.object({
       advice: z.string().nullable(),
     })
     .nullable(),
+  /** The league this fixture belongs to, as identified from both clubs' real match history. */
+  league: z
+    .object({
+      id: z.number().int(),
+      name: z.string(),
+      country: z.string().nullable(),
+      season: z.number().int(),
+      identifiedBy: z.enum(["shared_matches", "screenshot_name"]),
+    })
+    .nullable()
+    .optional(),
+  /** League-wide figures computed from that league's finished matches this season. */
+  leagueStats: LeagueStatsSchema.nullable().optional(),
+  /** Previous meetings between the two clubs (most recent first). */
+  h2h: z
+    .object({
+      meetings: z.array(
+        z.object({ date: z.string(), competition: z.string(), homeTeam: z.string(), awayTeam: z.string(), homeGoals: z.number().int(), awayGoals: z.number().int() }),
+      ),
+      dataAsOf: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+  /** Plain-language notes about data that could not be loaded. */
+  notes: z.array(z.string()).optional(),
   fetchedAt: z.string(),
   source: z.string(),
 });
@@ -193,8 +248,19 @@ export const EvidenceSchema = z.object({
   passed: z.boolean().nullable(),
   source: z.enum(["historical_match_data", "model_estimate", "screenshot_text"]),
   sampleSize: z.number().nullable(),
+  /** Which matches the figure is based on, e.g. "home games, last 6". */
+  basis: z.string().nullable().optional(),
+  /** Date of the most recent match in the sample. */
+  asOf: z.string().nullable().optional(),
 });
 export type Evidence = z.infer<typeof EvidenceSchema>;
+
+export const CheckSchema = z.object({
+  rule: z.enum(["remove", "keep"]),
+  label: z.string(),
+  result: z.enum(["met", "not_met", "unknown"]),
+});
+export type Check = z.infer<typeof CheckSchema>;
 
 export const DecisionSchema = z.object({
   fixtureId: z.string(),
@@ -206,6 +272,8 @@ export const DecisionSchema = z.object({
   /** How complete the data behind the decision is. NOT the probability of any outcome. */
   confidence: z.number().min(0).max(1),
   missingData: z.array(z.string()),
+  /** One entry per top-level criterion: did this fixture meet it? */
+  checks: z.array(CheckSchema).optional(),
 });
 export type Decision = z.infer<typeof DecisionSchema>;
 

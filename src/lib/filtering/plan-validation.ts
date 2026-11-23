@@ -46,6 +46,18 @@ export function validatePlan(input: unknown): PlanValidation {
         if (def.needsLine && c.line !== null && c.line !== undefined && Math.abs((c.line % 1) - 0.5) > 1e-9) {
           problems.push(`Goal line ${c.line} should be a half-goal line like 1.5, 2.5 or 3.5.`);
         }
+        if (!def.needsLine) c.line = null;
+        if (def.basis === "league" && def.needsLine && c.line !== null && c.line !== undefined && c.line > 3.5) {
+          problems.push("League over/under figures are available for 0.5, 1.5, 2.5 and 3.5 goals only.");
+        }
+        // Match windows only make sense for team figures computed from a list of matches.
+        const windowed = def.windowed === true || c.metric === "form_points_per_game";
+        if (!windowed) {
+          delete c.window;
+          delete c.lastN;
+        } else if (c.metric === "form_points_per_game") {
+          delete c.window;
+        }
         return c;
       }
       case "group":
@@ -81,10 +93,11 @@ export function describeCondition(c: Condition | null): string {
     case "metric": {
       const def = getMetric(c.metric);
       const label = def?.label.replace("X", String(c.line ?? 2.5)) ?? c.metric;
+      const scope = [c.window === "overall" ? "all matches" : c.window === "venue" ? "home or away games" : null, c.lastN ? `last ${c.lastN}` : null].filter(Boolean).join(", ");
       const pct = def && (def.unit === "probability" || def.unit === "rate");
       const v = pct ? `${Math.round(c.value * 100)}%` : String(c.value);
       const subj = c.subject === "match" ? "" : c.subject === "both" ? " (both teams)" : c.subject === "either" ? " (either team)" : ` (${c.subject} team)`;
-      return `${label}${subj} ${c.comparator} ${v}`;
+      return `${label}${subj}${scope ? ` [${scope}]` : ""} ${c.comparator} ${v}`;
     }
     case "team":
       return `${c.subject === "either" ? "Either team" : c.subject === "home" ? "Home team" : "Away team"} is ${c.teams.join(" or ")}`;

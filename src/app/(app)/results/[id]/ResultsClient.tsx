@@ -9,6 +9,7 @@ import { InstructionBox } from "@/components/dashboard/InstructionBox";
 import { DecisionRow } from "@/components/results/DecisionCard";
 import { Button, ButtonLink, buttonClass, cn, Kicker, Notice, Skeleton } from "@/components/ui/primitives";
 import { api, ApiError } from "@/lib/client/api";
+import { savePlaybook } from "@/lib/client/playbooks";
 import { useJob } from "@/lib/client/use-job";
 import type { DecisionValue, Fixture } from "@/lib/domain/schemas";
 
@@ -27,6 +28,8 @@ export function ResultsClient() {
   const [editing, setEditing] = useState(false);
   const [instruction, setInstruction] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  const [playbookName, setPlaybookName] = useState("");
+  const [playbookMsg, setPlaybookMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (job && job.status !== "COMPLETED") router.replace(`/analyze/${job.id}`);
@@ -123,6 +126,26 @@ export function ResultsClient() {
       tone: (applied[f.id] === "REMOVE" ? "remove" : applied[f.id] === "NEEDS_REVIEW" ? "review" : "keep") as "remove" | "review" | "keep",
     }));
 
+  // Playbook outcome per league: the identified league, else the competition shown on the screenshot.
+  const byLeague = new Map<string, { read: number; KEEP: number; REMOVE: number; NEEDS_REVIEW: number }>();
+  for (const d of decisions) {
+    const f = fixtureById.get(d.fixtureId);
+    if (!f || f.excluded) continue;
+    const name = job.stats[d.fixtureId]?.league?.name ?? f.competition ?? "Competition not identified";
+    const row = byLeague.get(name) ?? { read: 0, KEEP: 0, REMOVE: 0, NEEDS_REVIEW: 0 };
+    row.read++;
+    row[applied[d.fixtureId]!]++;
+    byLeague.set(name, row);
+  }
+  const leagueRows = [...byLeague.entries()].sort((a, b) => b[1].read - a[1].read);
+
+  function saveAsPlaybook() {
+    if (!job?.plan) return;
+    const pb = savePlaybook(playbookName || job.plan.summary.slice(0, 40), job.instruction, job.plan);
+    setPlaybookMsg(pb ? `Saved “${pb.name}”. Choose it in the workspace to run these rules on another screenshot.` : "This browser does not allow saving playbooks.");
+    if (pb) setPlaybookName("");
+  }
+
   const score = [
     { label: "Read", value: extracted, cls: "text-fg" },
     { label: "Kept", value: count("KEEP"), cls: "text-accent" },
@@ -186,6 +209,40 @@ export function ResultsClient() {
           </div>
         ))}
       </section>
+
+      {/* Playbook outcome by league */}
+      {leagueRows.length > 0 && (
+        <section aria-labelledby="by-league">
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <h2 id="by-league" className="kicker">Outcome by league</h2>
+            <span className="font-mono text-[11px] text-faint">{leagueRows.length} competition{leagueRows.length === 1 ? "" : "s"}</span>
+          </div>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="kicker text-left">
+                  <th className="py-2 font-normal" scope="col">Competition</th>
+                  <th className="py-2 text-right font-normal" scope="col">Read</th>
+                  <th className="py-2 text-right font-normal" scope="col">Kept</th>
+                  <th className="py-2 text-right font-normal" scope="col">Removed</th>
+                  <th className="py-2 text-right font-normal" scope="col">Review</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leagueRows.map(([name, r]) => (
+                  <tr key={name} className="border-t border-line">
+                    <td className="py-2 pr-4">{name}</td>
+                    <td className="py-2 text-right font-mono tnum">{r.read}</td>
+                    <td className="py-2 text-right font-mono text-accent tnum">{r.KEEP}</td>
+                    <td className="py-2 text-right font-mono text-danger tnum">{r.REMOVE}</td>
+                    <td className="py-2 text-right font-mono text-warn tnum">{r.NEEDS_REVIEW}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <div className="grid gap-x-10 gap-y-14 xl:grid-cols-12">
         {/* Images */}
@@ -260,6 +317,23 @@ export function ResultsClient() {
               <p className="mt-3 text-sm text-fg/85">
                 {count("REMOVE")} of {extracted} fixtures met your removal criteria{count("NEEDS_REVIEW") ? `, and ${count("NEEDS_REVIEW")} could not be decided reliably` : ""}.
               </p>
+            )}
+            {job.plan && job.plan.status === "ok" && (
+              <form
+                className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-4"
+                onSubmit={(e) => { e.preventDefault(); saveAsPlaybook(); }}
+              >
+                <label htmlFor="playbook-name" className="text-[13px] text-muted">Reuse these rules</label>
+                <input
+                  id="playbook-name"
+                  value={playbookName}
+                  onChange={(e) => setPlaybookName(e.target.value.slice(0, 60))}
+                  placeholder="Playbook name"
+                  className="h-8 min-w-0 flex-1 rounded-[2px] border border-line bg-ink px-2.5 text-[13px] placeholder:text-faint focus:border-accent focus:outline-none"
+                />
+                <Button type="submit" size="sm" variant="secondary">Save as playbook</Button>
+                {playbookMsg && <p className="w-full text-[12px] text-muted" role="status">{playbookMsg}</p>}
+              </form>
             )}
           </section>
 

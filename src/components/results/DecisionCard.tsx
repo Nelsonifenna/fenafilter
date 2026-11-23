@@ -68,6 +68,28 @@ export function DecisionRow({
 
       <p className="mt-2 max-w-prose text-sm text-fg/80">{decision.reason}</p>
 
+      {decision.checks && decision.checks.length > 0 && (
+        <ul className="mt-3 space-y-1" aria-label="Criteria checklist">
+          {decision.checks.map((c, i) => (
+            <li key={i} className="grid grid-cols-[1.25rem_1fr_auto] items-baseline gap-2 text-[13px]">
+              <span
+                className={cn("font-mono text-[12px]", c.result === "met" ? (c.rule === "remove" ? "text-danger" : "text-accent") : c.result === "unknown" ? "text-warn" : "text-faint")}
+                aria-hidden
+              >
+                {c.result === "met" ? "●" : c.result === "unknown" ? "?" : "○"}
+              </span>
+              <span className={c.result === "not_met" ? "text-muted" : "text-fg/90"}>
+                <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-faint">{c.rule === "remove" ? "Remove if" : "Keep if"} </span>
+                {c.label}
+              </span>
+              <span className={cn("font-mono text-[11px]", c.result === "met" ? "text-fg" : c.result === "unknown" ? "text-warn" : "text-faint")}>
+                {c.result === "met" ? "met" : c.result === "unknown" ? "no data" : "not met"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
       {decision.evidence.length > 0 && (
         <div className="mt-4 overflow-x-auto">
           <table className="w-full text-[13px]">
@@ -85,8 +107,10 @@ export function DecisionRow({
                   <td className="py-2 pr-3">
                     <span className="text-fg/90">{e.label}</span>
                     <span className="block text-[11px] text-faint">
-                      {e.subject}
-                      {e.sampleSize !== null ? ` · ${e.sampleSize} matches` : ""}
+                      {e.subject === "match" ? "" : e.subject}
+                      {e.basis ? `${e.subject === "match" ? "" : " · "}${e.basis}` : ""}
+                      {e.sampleSize !== null && e.source !== "model_estimate" ? ` · ${e.sampleSize} ${e.basis?.includes("meeting") ? "meetings" : "matches"}` : ""}
+                      {e.asOf ? ` · to ${e.asOf.slice(0, 10)}` : ""}
                     </span>
                   </td>
                   <td className={cn("py-2 pr-3 text-right font-mono tnum", e.passed === true ? "text-fg" : e.passed === false ? "text-muted" : "text-warn")}>{e.display}</td>

@@ -2,7 +2,9 @@ import "server-only";
 import { getEnv } from "../config/env";
 import { logError } from "../errors";
 import type { Fixture, FixtureStats, RecentMatch, TeamData, TeamResolution } from "../domain/schemas";
-import { footballApi, FootballApiError, type ApiFixture } from "./api-football";
+import { footballApi, FootballApiError, isPlanBlocked, markPlanBlocked, planRestrictionKey, type ApiFixture } from "./api-football";
+import type { DataNeeds } from "../filtering/engine";
+import { identifyLeague, summarizeLeague, toH2H } from "./context";
 import { resolvePair, toRecentMatches, type SearchCandidate } from "./resolver";
 import { isStale } from "./stats";
 import { basicNormalize, searchTermFor } from "./team-names";
@@ -50,23 +52,30 @@ function currentSeasonStartYear(now = new Date()) {
 }
 
 async function recentMatches(teamId: number): Promise<{ matches: RecentMatch[]; note: string | null }> {
-  try {
-    const res = await footballApi.lastFixtures(teamId, RECENT_COUNT);
-    return { matches: toRecentMatches(teamId, res.response), note: null };
-  } catch (e) {
-    if (!(e instanceof FootballApiError) || e.kind !== "plan") throw e;
+  if (!(await isPlanBlocked("param:last"))) {
+    try {
+      const res = await footballApi.lastFixtures(teamId, RECENT_COUNT);
+      return { matches: toRecentMatches(teamId, res.response), note: null };
+    } catch (e) {
+      if (!(e instanceof FootballApiError) || e.kind !== "plan") throw e;
+      const key = planRestrictionKey(e);
+      if (key) await markPlanBlocked(key);
+    }
   }
   // Plan does not allow `last`: fall back to whole seasons, newest accessible first.
   const start = currentSeasonStartYear();
   for (const season of [start, start - 1, start - 2, start - 3]) {
+    if (await isPlanBlocked(`season:${season}`)) continue;
     try {
       const res = await footballApi.seasonFixtures(teamId, season);
       const matches = toRecentMatches(teamId, res.response as ApiFixture[]).slice(0, RECENT_COUNT);
       if (matches.length > 0) {
-        return { matches, note: season < start ? `Only older match data was available (season ${season}), so figures may be outdated.` : null };
+        return { matches, note: season < start ? `Only older match data was available (season ${season}/${String(season + 1).slice(-2)}), so figures may be outdated.` : null };
       }
     } catch (e) {
       if (e instanceof FootballApiError && e.kind === "plan") {
+        const key = planRestrictionKey(e, season);
+        if (key) await markPlanBlocked(key);
         logError(`football plan restriction (team ${teamId}, season ${season})`, e);
         continue;
       }
@@ -98,7 +107,12 @@ export interface TeamOverrides {
   away?: number;
 }
 
-export async function collectFixtureStats(fixture: Fixture, overrides: TeamOverrides = {}): Promise<FixtureStats> {
+const ALL_NEEDS: DataNeeds = { teams: true, h2h: true, league: true, competitionLookup: true };
+
+/** Errors that must stop the whole statistics step (they would fail for every fixture). */
+const isFatal = (e: unknown) => e instanceof FootballApiError && (e.kind === "quota_daily" || e.kind === "auth" || e.kind === "rate_minute");
+
+export async function collectFixtureStats(fixture: Fixture, overrides: TeamOverrides = {}, needs: DataNeeds = ALL_NEEDS): Promise<FixtureStats> {
   const env = getEnv();
   const [homeCands, awayCands, country] = await Promise.all([
     searchCandidates(fixture.homeTeam),
@@ -119,6 +133,43 @@ export async function collectFixtureStats(fixture: Fixture, overrides: TeamOverr
 
   const homeData = await fetchTeam(home);
   const awayData = await fetchTeam(away);
+  const notes: string[] = [];
+
+  // League: identified from both clubs' real fixtures (or the screenshot name as a fallback).
+  const league = identifyLeague(homeData.recent, awayData.recent, fixture.competition);
+  let leagueStats: FixtureStats["leagueStats"] = null;
+  if (needs.league && league && (await isPlanBlocked(`season:${league.season}`))) {
+    notes.push(`League figures for ${league.name} are not available for this season.`);
+  } else if (needs.league && league) {
+    try {
+      const res = await footballApi.leagueFixtures(league.id, league.season);
+      leagueStats = summarizeLeague(res.response);
+      if (!leagueStats) notes.push(`No finished ${league.name} matches were available for this season.`);
+    } catch (e) {
+      if (isFatal(e)) throw e;
+      if (e instanceof FootballApiError) {
+        const key = planRestrictionKey(e, league.season);
+        if (key) await markPlanBlocked(key);
+      }
+      logError(`football league ${league.id}/${league.season}`, e);
+      notes.push(`League figures for ${league.name} could not be loaded.`);
+    }
+  } else if (needs.league && !league) {
+    notes.push("The league for this fixture could not be identified from the clubs' recent matches.");
+  }
+
+  // Previous meetings between the two clubs.
+  let h2h: FixtureStats["h2h"] = null;
+  if (needs.h2h && home.team && away.team && home.status === "matched" && away.status === "matched") {
+    try {
+      const res = await footballApi.headToHead(home.team.id, away.team.id);
+      h2h = toH2H(res.response);
+    } catch (e) {
+      if (isFatal(e)) throw e;
+      logError(`football h2h ${home.team.id}-${away.team.id}`, e);
+      notes.push("Previous meetings between these clubs could not be loaded.");
+    }
+  }
 
   let prediction: FixtureStats["prediction"] = null;
   if (env.football.enablePredictions && home.team && away.team) {
@@ -149,6 +200,10 @@ export async function collectFixtureStats(fixture: Fixture, overrides: TeamOverr
     home: homeData,
     away: awayData,
     prediction,
+    league,
+    leagueStats,
+    h2h,
+    notes,
     fetchedAt: new Date().toISOString(),
     source: "API-Football v3",
   };

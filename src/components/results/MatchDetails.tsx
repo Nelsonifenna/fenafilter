@@ -172,6 +172,84 @@ export function MatchDetails({ detail, stats }: { detail: MatchDetailView | unde
         )}
       </section>
 
+      {/* League context */}
+      {stats.league && (
+        <section>
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <p className="kicker">League context</p>
+            <span className="font-mono text-[11px] text-faint">
+              {stats.league.identifiedBy === "shared_matches" ? "identified from both clubs’ fixtures" : "matched to the competition on the screenshot"}
+            </span>
+          </div>
+          <p className="mt-2 text-sm">
+            {stats.league.name}
+            <span className="text-muted">
+              {stats.league.country ? ` · ${stats.league.country}` : ""} · {stats.league.season}/{String(stats.league.season + 1).slice(-2)}
+            </span>
+          </p>
+          {stats.leagueStats ? (
+            <>
+              <div className="mt-3 grid grid-cols-4 gap-px border-t border-line bg-line pt-px">
+                {[
+                  ["Goals per game", num(stats.leagueStats.avgGoals)],
+                  ["Home goals", num(stats.leagueStats.homeGoalsAvg)],
+                  ["Away goals", num(stats.leagueStats.awayGoalsAvg)],
+                  ["Both scored", pct(stats.leagueStats.bttsRate)],
+                  ["Over 0.5", pct(stats.leagueStats.over05Rate)],
+                  ["Over 1.5", pct(stats.leagueStats.over15Rate)],
+                  ["Over 2.5", pct(stats.leagueStats.over25Rate)],
+                  ["Over 3.5", pct(stats.leagueStats.over35Rate)],
+                ].map(([k, v]) => (
+                  <div key={k} className="bg-ink py-2.5 text-center">
+                    <p className="font-mono text-[14px] tnum">{v}</p>
+                    <p className="mt-0.5 text-[11px] text-muted">{k}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 font-mono text-[11px] text-faint">
+                Historical · {stats.leagueStats.matches} league matches this season
+                {stats.leagueStats.dataAsOf ? ` · to ${stats.leagueStats.dataAsOf.slice(0, 10)}` : ""}
+              </p>
+            </>
+          ) : (
+            <p className="mt-2 text-[13px] text-muted">League-wide figures were not needed for your rules, or are not available.</p>
+          )}
+        </section>
+      )}
+
+      {/* Head-to-head */}
+      {stats.h2h && (
+        <section>
+          <p className="kicker">Previous meetings</p>
+          {stats.h2h.meetings.length === 0 ? (
+            <p className="mt-2 text-[13px] text-muted">No previous meetings found.</p>
+          ) : (
+            <>
+              <p className="mt-2 text-[13px] text-muted">
+                <span className="font-mono text-fg tnum">{num(stats.h2h.meetings.reduce((s, m) => s + m.homeGoals + m.awayGoals, 0) / stats.h2h.meetings.length)}</span> goals per meeting ·{" "}
+                <span className="font-mono text-fg tnum">{pct(stats.h2h.meetings.filter((m) => m.homeGoals > 0 && m.awayGoals > 0).length / stats.h2h.meetings.length)}</span> both scored · last {stats.h2h.meetings.length}
+              </p>
+              <ul className="mt-2 font-mono text-[11px] text-muted">
+                {stats.h2h.meetings.map((m, i) => (
+                  <li key={i} className="grid grid-cols-[5.5rem_1fr_auto_1fr] items-baseline gap-2 border-t border-line py-1">
+                    <span className="tnum">{m.date.slice(0, 10)}</span>
+                    <span className="truncate text-right">{m.homeTeam}</span>
+                    <span className="text-fg tnum">{m.homeGoals}–{m.awayGoals}</span>
+                    <span className="truncate">{m.awayTeam}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
+
+      {stats.notes && stats.notes.length > 0 && (
+        <ul className="space-y-1 border-l-2 border-warn pl-3">
+          {stats.notes.map((n) => <li key={n} className="text-[12px] text-warn">{n}</li>)}
+        </ul>
+      )}
+
       {/* Raw results */}
       {(stats.home.recent.length > 0 || stats.away.recent.length > 0) && (
         <details className="faq group">

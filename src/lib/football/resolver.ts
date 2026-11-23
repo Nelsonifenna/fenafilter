@@ -105,7 +105,7 @@ export function resolvePair(
 /** Convert API fixtures into the team's perspective; only finished matches with scores. */
 export function toRecentMatches(
   teamId: number,
-  fixtures: { fixture: { id: number; date: string; status: { short: string } }; league: { name: string }; teams: { home: { id: number; name: string }; away: { id: number; name: string } }; goals: { home: number | null; away: number | null } }[],
+  fixtures: { fixture: { id: number; date: string; status: { short: string } }; league: { name: string; id?: number; country?: string | null; season?: number }; teams: { home: { id: number; name: string }; away: { id: number; name: string } }; goals: { home: number | null; away: number | null } }[],
 ): RecentMatch[] {
   const FINISHED = new Set(["FT", "AET", "PEN"]);
   return fixtures
@@ -121,6 +121,9 @@ export function toRecentMatches(
         opponent: isHome ? f.teams.away.name : f.teams.home.name,
         goalsFor: (isHome ? f.goals.home : f.goals.away)!,
         goalsAgainst: (isHome ? f.goals.away : f.goals.home)!,
+        ...(f.league.id !== undefined ? { leagueId: f.league.id } : {}),
+        ...(f.league.country !== undefined ? { country: f.league.country } : {}),
+        ...(f.league.season !== undefined ? { season: f.league.season } : {}),
       };
     })
     .sort((a, b) => b.date.localeCompare(a.date));

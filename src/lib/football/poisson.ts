@@ -61,7 +61,19 @@ function shrink(observed: number, n: number, prior: number) {
   return (n * observed + PRIOR_WEIGHT * prior) / (n + PRIOR_WEIGHT);
 }
 
-export function estimateMatch(home: TeamProfile, away: TeamProfile): MatchEstimate | null {
+/**
+ * League priors: when the fixture's league has enough finished matches this
+ * season, its real home/away goal averages replace the generic prior. This is
+ * what makes the estimate league-aware (e.g. a low-scoring league pulls
+ * expectations down) without inventing any figures.
+ */
+export interface LeaguePriors {
+  home: number;
+  away: number;
+  label: string;
+}
+
+export function estimateMatch(home: TeamProfile, away: TeamProfile, priors?: LeaguePriors | null): MatchEstimate | null {
   const h = venueSplit(home, "home");
   const a = venueSplit(away, "away");
   if (h.split.avgFor === null || h.split.avgAgainst === null || a.split.avgFor === null || a.split.avgAgainst === null) {
@@ -75,8 +87,9 @@ export function estimateMatch(home: TeamProfile, away: TeamProfile): MatchEstima
   const rawAway = (a.split.avgFor + h.split.avgAgainst) / 2;
   const nHome = Math.min(h.split.played, a.split.played);
   const nAway = Math.min(a.split.played, h.split.played);
-  const lambdaHome = shrink(rawHome, nHome, PRIOR_HOME);
-  const lambdaAway = shrink(rawAway, nAway, PRIOR_AWAY);
+  const lambdaHome = shrink(rawHome, nHome, priors?.home ?? PRIOR_HOME);
+  const lambdaAway = shrink(rawAway, nAway, priors?.away ?? PRIOR_AWAY);
+  notes.push(priors ? `Adjusted towards ${priors.label} averages.` : "Adjusted towards a typical league average (league figures not available).");
   return fromLambdas(lambdaHome, lambdaAway, nHome, nAway, notes);
 }
 

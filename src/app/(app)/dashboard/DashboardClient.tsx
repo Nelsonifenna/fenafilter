@@ -10,6 +10,7 @@ import { ServiceNotice } from "@/components/ServiceNotice";
 import { jobHref, StatusBadge } from "@/components/StatusBadge";
 import { Button, Kicker, Notice, SectionHead, Skeleton } from "@/components/ui/primitives";
 import { api, ApiError, type SessionInfo } from "@/lib/client/api";
+import { deletePlaybook, loadPlaybooks, type Playbook } from "@/lib/client/playbooks";
 import { uploadImage } from "@/lib/client/upload";
 import type { JobSummaryView } from "@/lib/jobs/view";
 
@@ -23,11 +24,18 @@ export function DashboardClient() {
   const [instruction, setInstruction] = useState(() => params.get("instruction")?.slice(0, 1500) ?? "");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [recent, setRecent] = useState<JobSummaryView[] | null>(null);
+  const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
+  const [activePlaybook, setActivePlaybook] = useState<Playbook | null>(null);
 
   useEffect(() => {
     api.session().then(setSession).catch(() => setPhase({ kind: "error", message: "Could not start a session. Please refresh the page." }));
     api.history().then((h) => setRecent(h.items.slice(0, 5))).catch(() => setRecent([]));
+    // Saved playbooks live in this browser only; read after hydration.
+    void Promise.resolve().then(() => setPlaybooks(loadPlaybooks()));
   }, []);
+
+  // A saved playbook stays active only while its instruction is unchanged.
+  const usingPlaybook = activePlaybook && activePlaybook.instruction === instruction ? activePlaybook : null;
 
   const busy = phase.kind === "uploading" || phase.kind === "starting";
   const canSubmit = Boolean(file && instruction.trim().length >= 3 && session && !busy);
@@ -38,7 +46,7 @@ export function DashboardClient() {
       setPhase({ kind: "uploading", pct: 0 });
       const imageKey = await uploadImage(file, session, (pct) => setPhase({ kind: "uploading", pct }));
       setPhase({ kind: "starting" });
-      const { id } = await api.startAnalysis({ imageKey, instruction: instruction.trim(), originalName: file.name });
+      const { id } = await api.startAnalysis({ imageKey, instruction: instruction.trim(), originalName: file.name, plan: usingPlaybook?.plan });
       router.push(`/analyze/${id}`);
     } catch (e) {
       setPhase({ kind: "error", message: e instanceof ApiError ? e.message : "Upload failed. Please try again." });
@@ -71,6 +79,44 @@ export function DashboardClient() {
           <section aria-labelledby="instr-title">
             <SectionHead index="02" label="Instruction" title={<span id="instr-title">Tell it what to filter</span>} className="mb-6" />
             <InstructionBox value={instruction} onChange={setInstruction} disabled={busy} />
+            {playbooks.length > 0 && (
+              <div className="mt-6">
+                <p className="kicker">Saved playbooks</p>
+                <ul className="mt-2 border-b border-line">
+                  {playbooks.map((pb) => {
+                    const active = usingPlaybook?.id === pb.id;
+                    return (
+                      <li key={pb.id} className={`row-state grid grid-cols-[1fr_auto] items-center gap-3 border-t border-line py-2.5 pl-3`} data-selected={active}>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => { setInstruction(pb.instruction); setActivePlaybook(pb); }}
+                          className="min-w-0 text-left"
+                          aria-pressed={active}
+                        >
+                          <span className="block truncate text-[13px] font-medium">{pb.name}</span>
+                          <span className="block truncate text-[12px] text-muted">{pb.plan.summary}</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => { setPlaybooks(deletePlaybook(pb.id)); if (active) setActivePlaybook(null); }}
+                          className="px-2 font-mono text-[11px] text-faint transition-colors hover:text-danger"
+                          aria-label={`Delete playbook ${pb.name}`}
+                        >
+                          Delete
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {usingPlaybook && (
+                  <p className="mt-2 text-[12px] text-muted">
+                    The saved rules of <span className="text-fg">{usingPlaybook.name}</span> will run as they are. Edit the instruction to have it interpreted again.
+                  </p>
+                )}
+              </div>
+            )}
           </section>
 
           <section aria-labelledby="run-title">

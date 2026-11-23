@@ -39,7 +39,7 @@ export interface SessionInfo {
 
 export const api = {
   session: () => request<SessionInfo>("/api/session"),
-  startAnalysis: (data: { imageKey: string; instruction: string; originalName?: string }) => request<{ id: string }>("/api/analyze", jsonInit("POST", data)),
+  startAnalysis: (data: { imageKey: string; instruction: string; originalName?: string; plan?: FilterPlan }) => request<{ id: string }>("/api/analyze", jsonInit("POST", data)),
   job: (id: string) => request<JobView>(`/api/analyze/${id}`),
   confirm: (id: string, fixtures: Fixture[], plan: FilterPlan) => request<JobView>(`/api/analyze/${id}/confirm`, jsonInit("POST", { fixtures, plan })),
   reinterpret: (id: string, instruction: string) => request<JobView>(`/api/analyze/${id}/instruction`, jsonInit("POST", { instruction })),
