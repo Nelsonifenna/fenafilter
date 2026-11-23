@@ -2,6 +2,8 @@ import "server-only";
 import sharp from "sharp";
 import type { Extraction } from "../domain/schemas";
 import { AppError } from "../errors";
+
+const UNREADABLE = "This screenshot could not be read. Please try again, or use a clearer image.";
 import { extractJsonObject } from "../ai/json";
 import { geminiError, getGemini } from "../ai/gemini";
 import {
@@ -47,7 +49,7 @@ async function callGemini(image: Buffer, mimeType: string): Promise<unknown> {
   } catch (e) {
     throw geminiError(e, model);
   }
-  if (!text) throw new AppError("AI_INVALID_RESPONSE", "The vision model returned no content (the image may have been blocked).");
+  if (!text) throw new AppError("AI_INVALID_RESPONSE", UNREADABLE, { internal: "Vision model returned no content (possibly blocked)" });
   try {
     return JSON.parse(text);
   } catch {
@@ -70,7 +72,7 @@ export async function extractFixtures(image: Buffer, width: number, height: numb
     const crop = tiles.length === 1 ? await sharp(image).png().toBuffer() : await sharp(image).extract({ left: 0, top: tile.top, width, height: tile.height }).png().toBuffer();
     const raw = RawVisionSchema.safeParse(await callGemini(crop, "image/png"));
     if (!raw.success) {
-      throw new AppError("AI_INVALID_RESPONSE", "The vision model returned an unexpected format. Please try again.");
+      throw new AppError("AI_INVALID_RESPONSE", UNREADABLE, { internal: "Vision model output failed schema validation" });
     }
     isFootball ||= raw.data.is_football_fixture_image;
     layouts.push(raw.data.layout);

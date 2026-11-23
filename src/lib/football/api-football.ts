@@ -1,7 +1,7 @@
 import "server-only";
 import { cached, cacheKey } from "../cache";
 import { getEnv } from "../config/env";
-import { AppError } from "../errors";
+import { AppError, USER_MESSAGES } from "../errors";
 
 /**
  * API-Football v3 client (direct API-Sports subscription).
@@ -35,6 +35,18 @@ export interface ApiFixture {
 }
 export interface ApiPrediction {
   predictions: { advice: string | null; percent: { home: string | null; draw: string | null; away: string | null } };
+}
+
+/** User-facing wording for football-data failures (provider details stay in logs). */
+export function publicFootballMessage(e: FootballApiError): string {
+  switch (e.kind) {
+    case "quota_daily":
+      return "Football statistics have reached today's limit. Please try again tomorrow.";
+    case "rate_minute":
+      return "Football statistics are busy right now. Please try again in a minute.";
+    default:
+      return USER_MESSAGES.statisticsUnavailable;
+  }
 }
 
 export class FootballApiError extends Error {
@@ -72,7 +84,7 @@ export function classifyApiErrors(errors: unknown): FootballApiError | null {
 async function rawGet<T>(path: string, params: Record<string, string | number>): Promise<ApiEnvelope<T>> {
   const env = getEnv();
   if (!env.football.apiKey) {
-    throw new AppError("SERVICE_NOT_CONFIGURED", "Football statistics (API-Football) are not configured. Add API_FOOTBALL_KEY.");
+    throw new AppError("SERVICE_NOT_CONFIGURED", USER_MESSAGES.statisticsUnavailable, { internal: "API_FOOTBALL_KEY is not set" });
   }
   const url = new URL(path, env.football.baseUrl);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));

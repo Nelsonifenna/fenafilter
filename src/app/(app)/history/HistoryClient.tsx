@@ -1,10 +1,10 @@
 "use client";
 
-import { ArrowRight, FilePlus2, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { jobHref, StatusBadge } from "@/components/StatusBadge";
-import { Alert, Button, ButtonLink, Card, Skeleton } from "@/components/ui/primitives";
+import { Button, ButtonLink, Kicker, Notice, Skeleton } from "@/components/ui/primitives";
 import { api, ApiError } from "@/lib/client/api";
 import type { JobSummaryView } from "@/lib/jobs/view";
 
@@ -31,49 +31,75 @@ export function HistoryClient() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Analysis history</h1>
-          <p className="mt-1 text-sm text-muted">Analyses from this browser session. They are deleted automatically after 24 hours.</p>
+    <div className="space-y-10">
+      <header className="animate-rise grid gap-6 lg:grid-cols-12 lg:items-end">
+        <div className="lg:col-span-7">
+          <Kicker>Session</Kicker>
+          <h1 className="mt-3 font-display text-title font-bold uppercase">History</h1>
         </div>
-        <ButtonLink href="/dashboard"><FilePlus2 className="size-4" /> New analysis</ButtonLink>
-      </div>
-      {error && <Alert tone="danger">{error}</Alert>}
+        <div className="flex flex-wrap items-end justify-between gap-4 lg:col-span-5">
+          <p className="max-w-xs text-sm text-muted">Analyses from this browser session. Each one is deleted automatically after 24 hours.</p>
+          <ButtonLink href="/dashboard">New analysis</ButtonLink>
+        </div>
+      </header>
+
+      {error && <Notice tone="danger">{error}</Notice>}
+
       {items === null ? (
-        <div className="space-y-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-24" />)}</div>
+        <div className="space-y-px">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-20" />)}</div>
       ) : items.length === 0 ? (
-        <Card className="px-6 py-14 text-center">
-          <p className="font-medium">No analyses yet</p>
-          <p className="mt-1 text-sm text-muted">Upload a screenshot on the dashboard to get started.</p>
-        </Card>
+        <section className="grid gap-6 border-t border-line pt-8 lg:grid-cols-12">
+          <p className="font-display text-section font-semibold uppercase text-muted lg:col-span-5">No analyses yet</p>
+          <div className="lg:col-span-6 lg:col-start-7">
+            <p className="text-sm text-muted">Load a screenshot in the workspace. Finished and in-progress analyses appear here until they expire.</p>
+            <ButtonLink href="/dashboard" variant="secondary" className="mt-4">Open the workspace</ButtonLink>
+          </div>
+        </section>
       ) : (
-        <ul className="space-y-3">
-          {items.map((j) => (
-            <li key={j.id}>
-              <Card className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
-                <Link href={jobHref(j.id, j.status)} className="block shrink-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- private, session-authenticated image route */}
-                  <img src={j.thumbnailUrl} alt="" loading="lazy" className="h-20 w-full rounded-lg border border-line object-cover object-top sm:w-28" />
-                </Link>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge status={j.status} />
-                    <span className="text-xs text-faint">{new Date(j.createdAt).toLocaleString()}</span>
-                  </div>
-                  <p className="mt-1.5 line-clamp-2 text-sm">“{j.instruction}”</p>
-                  <p className="mt-1 text-xs text-muted">
-                    {j.fixtures} fixtures{j.status === "COMPLETED" ? ` · ${j.kept} kept · ${j.removed} removed · ${j.review} to review` : ""}
-                  </p>
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  <ButtonLink href={jobHref(j.id, j.status)} variant="secondary" size="sm">Open <ArrowRight className="size-3.5" /></ButtonLink>
-                  <Button variant="danger" size="sm" onClick={() => remove(j.id)} loading={deleting === j.id} aria-label="Delete analysis"><Trash2 className="size-3.5" /></Button>
-                </div>
-              </Card>
-            </li>
-          ))}
-        </ul>
+        <div>
+          <div className="kicker hidden grid-cols-[5rem_9rem_1fr_repeat(4,3.5rem)_10rem_2.5rem] gap-4 pb-2 lg:grid" aria-hidden>
+            <span />
+            <span>Date</span>
+            <span>Instruction</span>
+            <span className="text-right">Read</span>
+            <span className="text-right">Kept</span>
+            <span className="text-right">Out</span>
+            <span className="text-right">Rev</span>
+            <span>Status</span>
+            <span />
+          </div>
+          <ul className="border-b border-line">
+            {items.map((j) => {
+              const done = j.status === "COMPLETED";
+              return (
+                <li key={j.id} className="group grid grid-cols-[4rem_1fr_auto] items-center gap-x-4 gap-y-2 border-t border-line py-3 transition-colors hover:bg-surface lg:grid-cols-[5rem_9rem_1fr_repeat(4,3.5rem)_10rem_2.5rem]">
+                  <Link href={jobHref(j.id, j.status)} className="row-span-2 block lg:row-span-1" tabIndex={-1} aria-hidden>
+                    {/* eslint-disable-next-line @next/next/no-img-element -- private, session-authenticated image route */}
+                    <img src={j.thumbnailUrl} alt="" loading="lazy" className="h-14 w-full border border-line object-cover object-top grayscale transition-[filter] group-hover:grayscale-0" />
+                  </Link>
+                  <span className="font-mono text-[12px] text-faint tnum lg:order-none">{new Date(j.createdAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span>
+                  <Button variant="ghost" size="sm" className="justify-self-end px-2 text-faint hover:text-danger lg:order-last" onClick={() => remove(j.id)} loading={deleting === j.id} aria-label="Delete analysis">
+                    {deleting !== j.id && <Trash2 className="size-3.5" />}
+                  </Button>
+                  <Link href={jobHref(j.id, j.status)} className="col-span-2 min-w-0 lg:col-span-1">
+                    <span className="block truncate text-sm text-fg/90 transition-colors group-hover:text-fg">{j.instruction}</span>
+                    <span className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 lg:hidden">
+                      <StatusBadge status={j.status} />
+                      <span className="font-mono text-[11px] text-muted tnum">
+                        {j.fixtures} read{done ? ` · ${j.kept} kept · ${j.removed} out · ${j.review} review` : ""}
+                      </span>
+                    </span>
+                  </Link>
+                  <span className="hidden text-right font-mono text-[13px] tnum lg:block">{j.fixtures}</span>
+                  <span className="hidden text-right font-mono text-[13px] text-accent tnum lg:block">{done ? j.kept : "—"}</span>
+                  <span className="hidden text-right font-mono text-[13px] text-danger tnum lg:block">{done ? j.removed : "—"}</span>
+                  <span className="hidden text-right font-mono text-[13px] text-warn tnum lg:block">{done ? j.review : "—"}</span>
+                  <span className="hidden lg:block"><StatusBadge status={j.status} /></span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
     </div>
   );

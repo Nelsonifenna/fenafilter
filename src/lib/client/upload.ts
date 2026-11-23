@@ -21,13 +21,13 @@ function randomName() {
 
 /**
  * Upload the image.
- * - Vercel Blob mode: browser → Blob storage directly (private), via a scoped token from /api/upload.
+ * - Direct mode: browser → private object storage, via a scoped token from /api/upload.
  * - Local dev mode: multipart POST to /api/upload.
  * Returns the storage key used to start the analysis.
  */
 export async function uploadImage(file: File, session: SessionInfo, onProgress?: (pct: number) => void): Promise<string> {
   const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-  if (session.services.storage.mode === "vercel-blob") {
+  if (session.uploadMode === "direct") {
     const blob = await upload(`uploads/${session.ownerId}/${randomName()}.${ext}`, file, {
       access: "private",
       handleUploadUrl: "/api/upload",

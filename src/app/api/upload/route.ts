@@ -1,6 +1,6 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { getEnv } from "@/lib/config/env";
-import { AppError } from "@/lib/errors";
+import { AppError, USER_MESSAGES } from "@/lib/errors";
 import { clientIp, errorResponse, json } from "@/lib/http";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import { requireSessionId } from "@/lib/security/session";
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     const contentType = req.headers.get("content-type") ?? "";
 
     if (contentType.includes("application/json")) {
-      if (!env.blob.token) throw new AppError("SERVICE_NOT_CONFIGURED", "Direct uploads need BLOB_READ_WRITE_TOKEN.");
+      if (!env.blob.token) throw new AppError("SERVICE_NOT_CONFIGURED", USER_MESSAGES.uploadsUnavailable, { internal: "BLOB_READ_WRITE_TOKEN is not set" });
       const body = (await req.json()) as HandleUploadBody;
       const result = await handleUpload({
         body,
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     }
 
     if (contentType.includes("multipart/form-data")) {
-      if (getStore().mode !== "local") throw new AppError("BAD_REQUEST", "Use direct upload in this environment.");
+      if (getStore().mode !== "local") throw new AppError("BAD_REQUEST", USER_MESSAGES.uploadsUnavailable, { internal: "multipart upload attempted while Blob storage is active" });
       const ownerId = await requireSessionId();
       checkRateLimit("upload", `${ownerId}:${clientIp(req)}`);
       const len = Number(req.headers.get("content-length") ?? "0");
@@ -63,7 +63,7 @@ export async function POST(req: Request) {
       return json({ pathname: key });
     }
 
-    throw new AppError("UNSUPPORTED_MEDIA", "Unsupported upload request.");
+    throw new AppError("UNSUPPORTED_MEDIA", "This upload could not be processed. Please choose the image again.");
   } catch (e) {
     return errorResponse(e, "upload");
   }

@@ -80,12 +80,13 @@ There is no built-in fallback secret. In production (`NODE_ENV=production` or on
 | Variable | Required | Purpose |
 |---|---|---|
 | `GEMINI_API_KEY` | yes (for analysis) | Google Gemini — reads fixtures from screenshots and interprets instructions |
-| `GEMINI_MODEL` | no | Default `gemini-3.1-flash-lite` (text + image input, free tier). Check it with `GET /api/health?verify=gemini` |
+| `GEMINI_MODEL` | no | Default `gemini-3.1-flash-lite` (text + image input, free tier). Check it with the diagnostics endpoint (see below) |
 | `API_FOOTBALL_KEY` | yes (for statistics rules) | API-Football (api-sports.io) |
 | `API_FOOTBALL_ENABLE_PREDICTIONS` | no | `true` to also show API-Football predictions (uses extra requests) |
 | `BLOB_READ_WRITE_TOKEN` | on Vercel | Private Vercel Blob store. Locally, `./.data` is used when unset |
 | `SESSION_SECRET` | in production | ≥32 random characters. Signs guest session cookies |
 | `CRON_SECRET` | on Vercel | Protects the daily cleanup job |
+| `DIAGNOSTICS_SECRET` | no | Enables developer diagnostics at `/api/health?details=1` in production. Unset means diagnostics are disabled there |
 | `LOCAL_STORAGE_DIR` | no | Local storage folder (default `.data`) |
 | `API_FOOTBALL_BASE_URL` | no | Override the API-Football endpoint |
 
@@ -107,6 +108,8 @@ npm run build; npm start            # terminal 1
 npm run test:smoke                  # terminal 2
 ```
 
+The smoke test does **not** start a real AI analysis when AI is configured (that would spend quota) unless you set `SMOKE_LIVE=1`. Its pipeline step still writes one short AI summary when an AI key is set.
+
 `npm test` goes through `scripts/vitest.mjs`, which fixes a Windows issue: VS Code terminals report the drive as lowercase `c:\`, which makes Vitest load itself twice.
 
 **Mock data policy:** unit tests use synthetic images and synthetic match histories, and stub the language model. All of these are labelled as mocks in the test files. The smoke test injects one clearly labelled **mock extraction** in place of the Gemini call. Everything after that is real: routes, sessions, pipeline, engine, Sharp editing, download and deletion. AI output quality must be checked with real keys.
@@ -114,8 +117,25 @@ npm run test:smoke                  # terminal 2
 ### Testing with real services
 
 1. Add the keys to `.env.local` and restart `npm run dev`.
-2. Visit `http://localhost:3000/api/health?verify=gemini`. It should report your Gemini model as available.
+2. Visit `http://localhost:3000/api/health?details=1&verify=gemini`. It should report `"aiCheck": { "ok": true }`. In local development this works without a secret.
 3. Upload a real screenshot on `/dashboard` and try the example instructions.
+
+### Health checks and diagnostics
+
+| Request | Who | Returns |
+|---|---|---|
+| `GET /api/health` | anyone (uptime monitors) | `{"status":"ok"}` and nothing else |
+| `GET /api/health?details=1` | developers | configured services, model name, warnings |
+| `GET /api/health?details=1&verify=gemini` | developers | the above plus one real AI request |
+
+In production the detailed forms need `Authorization: Bearer <DIAGNOSTICS_SECRET>`, and they answer 404 to everyone else, or to everyone if the secret is unset. From PowerShell:
+
+```powershell
+$h = @{ Authorization = "Bearer $env:DIAGNOSTICS_SECRET" }
+Invoke-RestMethod "https://<your-app>.vercel.app/api/health?details=1" -Headers $h | ConvertTo-Json -Depth 5
+```
+
+The user interface never names the AI, data or storage providers. Technical error details go to the server logs, and users see plain-language messages.
 
 ---
 

@@ -37,6 +37,8 @@ const schema = z.object({
 
   SESSION_SECRET: optionalString,
   CRON_SECRET: optionalString,
+  // Protects detailed diagnostics at /api/health?details=1 (optional; unset = disabled in production).
+  DIAGNOSTICS_SECRET: optionalString,
   LOCAL_STORAGE_DIR: optionalString,
 });
 
@@ -47,6 +49,7 @@ export type ServerEnv = {
   sessionSecret: string;
   sessionSecretIsDevFallback: boolean;
   cronSecret?: string;
+  diagnosticsSecret?: string;
   localStorageDir: string;
   isProduction: boolean;
   isVercel: boolean;
@@ -122,6 +125,7 @@ export function getEnv(): ServerEnv {
     sessionSecret: session.secret,
     sessionSecretIsDevFallback: session.isEphemeral,
     cronSecret: e.CRON_SECRET,
+    diagnosticsSecret: e.DIAGNOSTICS_SECRET,
     localStorageDir: e.LOCAL_STORAGE_DIR ?? ".data",
     isProduction,
     isVercel,
@@ -129,7 +133,11 @@ export function getEnv(): ServerEnv {
   return cached;
 }
 
-/** Which integrations are usable right now. Safe to send to the browser (no secrets). */
+/**
+ * Which integrations are configured, with provider and model names.
+ * INTERNAL ONLY: used by server code and the protected diagnostics endpoint.
+ * Never send this to the browser — use getPublicAvailability() instead.
+ */
 export function getServiceStatus() {
   const env = getEnv();
   return {
@@ -140,6 +148,21 @@ export function getServiceStatus() {
 }
 
 export type ServiceStatus = ReturnType<typeof getServiceStatus>;
+
+/**
+ * What the browser needs to know, without naming providers, models or storage:
+ * - which upload flow to use ("direct" to private storage, or "server" in local development)
+ * - whether analysis and football statistics are currently available
+ */
+export function getPublicAvailability() {
+  const env = getEnv();
+  return {
+    uploadMode: env.blob.token ? ("direct" as const) : ("server" as const),
+    availability: { analysis: Boolean(env.gemini.apiKey), statistics: Boolean(env.football.apiKey) },
+  };
+}
+
+export type PublicAvailability = ReturnType<typeof getPublicAvailability>;
 
 /** For tests only. */
 export function __resetEnvCache() {

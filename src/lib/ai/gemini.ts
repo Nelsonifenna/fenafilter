@@ -1,7 +1,7 @@
 import "server-only";
 import { GoogleGenAI } from "@google/genai";
 import { getEnv } from "../config/env";
-import { AppError, redact } from "../errors";
+import { AppError, redact, USER_MESSAGES } from "../errors";
 import { toGeminiRequest, type ChatMessage } from "./gemini-messages";
 
 /**
@@ -17,23 +17,30 @@ let ai: GoogleGenAI | null = null;
 export function getGemini(): { ai: GoogleGenAI; model: string } {
   const env = getEnv();
   if (!env.gemini.apiKey) {
-    throw new AppError("SERVICE_NOT_CONFIGURED", "Google Gemini is not configured. Add GEMINI_API_KEY.");
+    throw new AppError("SERVICE_NOT_CONFIGURED", USER_MESSAGES.analysisUnavailable, { internal: "GEMINI_API_KEY is not set" });
   }
   ai ??= new GoogleGenAI({ apiKey: env.gemini.apiKey });
   return { ai, model: env.gemini.model };
 }
 
-/** Map SDK/HTTP failures to user-safe messages. Never includes the key. */
+/**
+ * Map SDK/HTTP failures to a user-safe message (no provider, model or key
+ * details) plus an internal explanation that only goes to server logs.
+ */
 export function geminiError(e: unknown, model: string): AppError {
   if (e instanceof AppError) return e;
   const status = (e as { status?: number }).status;
-  const msg =
-    status === 400 ? "Gemini rejected the request (400). The input may be unsupported."
-    : status === 401 || status === 403 ? "Gemini rejected the API key. Check GEMINI_API_KEY."
-    : status === 404 ? `Gemini model "${model}" was not found. Check GEMINI_MODEL against Google's model list.`
-    : status === 429 ? "Gemini quota or rate limit exceeded (429). Free-tier limits may apply; please retry later."
-    : "Google Gemini is unavailable right now.";
-  return new AppError("UPSTREAM_ERROR", msg, { cause: new Error(redact(String((e as Error)?.message ?? e))) });
+  const user =
+    status === 400 ? "This screenshot could not be processed. Try a clearer or smaller image."
+    : status === 429 ? USER_MESSAGES.busy
+    : USER_MESSAGES.analysisUnavailable;
+  const internal =
+    status === 400 ? `Gemini rejected the request (400) for model ${model}`
+    : status === 401 || status === 403 ? `Gemini rejected the API key (${status}); check GEMINI_API_KEY`
+    : status === 404 ? `Gemini model "${model}" not found (404); check GEMINI_MODEL`
+    : status === 429 ? `Gemini quota or rate limit exceeded (429) for model ${model}`
+    : `Gemini unavailable (status ${status ?? "none"}) for model ${model}`;
+  return new AppError("UPSTREAM_ERROR", user, { internal, cause: new Error(redact(String((e as Error)?.message ?? e))) });
 }
 
 /**
@@ -62,7 +69,7 @@ export async function geminiChat(
   } catch (e) {
     throw geminiError(e, model);
   }
-  if (!text) throw new AppError("AI_INVALID_RESPONSE", "Gemini returned an empty response.");
+  if (!text) throw new AppError("AI_INVALID_RESPONSE", "The analysis returned no result. Please try again.", { internal: "Gemini returned an empty response" });
   return text;
 }
 
@@ -87,6 +94,8 @@ export async function verifyGeminiConnection(): Promise<{ ok: boolean; model: st
     if (!reply) return { ok: false, model, message: "Connected, but the model returned an empty reply.", latencyMs };
     return { ok: true, model: info.name ?? model, message: `Gemini responded successfully (${reply.slice(0, 20)}).`, latencyMs };
   } catch (e) {
-    return { ok: false, model, message: geminiError(e, model).message };
+    // Developer diagnostics only (protected endpoint): show the technical reason.
+    const err = geminiError(e, model);
+    return { ok: false, model, message: err.internal ?? err.message };
   }
 }

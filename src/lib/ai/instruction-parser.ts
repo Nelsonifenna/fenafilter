@@ -89,6 +89,8 @@ export type ChatFn = (messages: ChatMessage[]) => Promise<string>;
 export interface ParseResult {
   plan: FilterPlan | null;
   error: string | null;
+  /** Technical validation problems, for server logs only. */
+  detail?: string;
 }
 
 /**
@@ -117,5 +119,9 @@ export async function parseInstruction(instruction: string, chat: ChatFn): Promi
     lastProblem = v.problems.join(" ");
     messages.push({ role: "assistant", content: raw.slice(0, 4000) }, { role: "user", content: `The plan is invalid: ${lastProblem} Fix it and reply with ONLY the corrected JSON plan.` });
   }
-  return { plan: null, error: `The instruction could not be translated reliably (${lastProblem}). Try rephrasing it more specifically.` };
+  return {
+    plan: null,
+    error: "This instruction could not be translated into clear rules. Try rephrasing it more specifically, for example naming the statistic and whether to keep or remove.",
+    detail: lastProblem,
+  };
 }

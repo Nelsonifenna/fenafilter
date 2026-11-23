@@ -1,4 +1,4 @@
-import type { Job } from "../domain/schemas";
+import type { FixtureStats, Job } from "../domain/schemas";
 import { buildContext } from "../filtering/engine";
 import { probOver } from "../football/poisson";
 import type { Split } from "../football/stats";
@@ -94,16 +94,33 @@ export function toJobView(job: Job) {
       });
     }
   }
-  const { ownerId: _owner, lease: _lease, ...rest } = job;
+  // Strip internal fields: ownership, worker lease, storage keys, AI model names
+  // and the data provider's name never leave the server.
+  const { ownerId: _owner, lease: _lease, image, extraction, summary, stats, output, ...rest } = job;
   void _owner;
   void _lease;
+  const { key: _imageKey, ...publicImage } = image;
+  void _imageKey;
+  const publicExtraction = extraction ? (({ model: _m, ...x }) => (void _m, x))(extraction) : null;
+  const publicOutput = output ? (({ key: _k, ...o }) => (void _k, o))(output) : null;
+  const publicStats: Record<string, PublicFixtureStats> = Object.fromEntries(
+    Object.entries(stats).map(([id, s]) => [id, (({ source: _s, ...p }) => (void _s, p))(s)]),
+  );
   return {
     ...rest,
+    image: publicImage,
+    extraction: publicExtraction,
+    summary: summary ? { text: summary.text } : null,
+    stats: publicStats,
+    output: publicOutput,
     imageUrl: `/api/image/${job.id}/original`,
-    outputUrl: job.output ? `/api/image/${job.id}/output?v=${encodeURIComponent(job.output.generatedAt)}` : null,
+    outputUrl: output ? `/api/image/${job.id}/output?v=${encodeURIComponent(output.generatedAt)}` : null,
     details,
   };
 }
+
+/** Football statistics as sent to the browser (without the provider's name). */
+export type PublicFixtureStats = Omit<FixtureStats, "source">;
 
 export type JobView = ReturnType<typeof toJobView>;
 

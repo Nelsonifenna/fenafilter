@@ -36,7 +36,9 @@ export async function POST(req: Request, ctx: RouteContext<"/api/analyze/[id]/co
       throw new AppError("CONFLICT", "This analysis cannot be confirmed in its current state.");
     }
     const v = validatePlan(body.plan);
-    if (!v.ok || !v.plan) throw new AppError("BAD_REQUEST", `The filtering rules are invalid: ${v.problems.join(" ")}`);
+    if (!v.ok || !v.plan) {
+      throw new AppError("BAD_REQUEST", "These rules could not be applied. Adjust the thresholds or rephrase your instruction.", { internal: v.problems.join(" ") });
+    }
     if (v.plan.status !== "ok") throw new AppError("BAD_REQUEST", "Please answer the clarification question first.");
 
     const { imageWidth: W, imageHeight: H } = job.extraction;

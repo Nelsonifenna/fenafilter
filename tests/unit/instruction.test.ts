@@ -86,6 +86,8 @@ describe("parseInstruction (stubbed model)", () => {
     const r = await parseInstruction("x x x", stub("nope", "still nope"));
     expect(r.plan).toBeNull();
     expect(r.error).toMatch(/could not be translated/);
+    expect(r.error).not.toMatch(/removeWhen|schema|JSON/);
+    expect(r.detail).toBeTruthy();
   });
 
   it("keeps the user text inside data tags and the catalogue in the system prompt", () => {

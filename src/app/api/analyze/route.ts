@@ -1,7 +1,7 @@
 import { after } from "next/server";
 import { z } from "zod";
 import type { Job } from "@/lib/domain/schemas";
-import { AppError } from "@/lib/errors";
+import { AppError, USER_MESSAGES } from "@/lib/errors";
 import { clientIp, errorResponse, json, readJson } from "@/lib/http";
 import { advance } from "@/lib/jobs/pipeline";
 import { initialSteps, JOB_TTL_HOURS, newJobId, saveJob } from "@/lib/jobs/repository";
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     // Blob client uploads add a random suffix before the extension; both forms match this regex.
     if (!uploadPathRegex(ownerId).test(body.imageKey)) throw new AppError("FORBIDDEN", "This image does not belong to your session.");
     if (!getServiceStatus().gemini.configured) {
-      throw new AppError("SERVICE_NOT_CONFIGURED", "Fixture extraction needs GEMINI_API_KEY. Add it to your environment and restart.");
+      throw new AppError("SERVICE_NOT_CONFIGURED", USER_MESSAGES.analysisUnavailable, { internal: "GEMINI_API_KEY is not set" });
     }
 
     const stored = await getStore().get(body.imageKey);

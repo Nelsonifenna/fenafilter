@@ -1,6 +1,6 @@
 import "server-only";
 import { getEnv } from "../config/env";
-import { AppError } from "../errors";
+import { AppError, USER_MESSAGES } from "../errors";
 import { LocalObjectStore } from "./local";
 import type { ObjectStore } from "./types";
 import { VercelBlobStore } from "./vercel-blob";
@@ -13,10 +13,9 @@ export function getStore(): ObjectStore {
   if (env.blob.token) {
     store = new VercelBlobStore(env.blob.token);
   } else if (env.isVercel) {
-    throw new AppError(
-      "SERVICE_NOT_CONFIGURED",
-      "Storage is not configured. Connect a private Vercel Blob store (BLOB_READ_WRITE_TOKEN).",
-    );
+    throw new AppError("SERVICE_NOT_CONFIGURED", USER_MESSAGES.uploadsUnavailable, {
+      internal: "Storage not configured on Vercel: connect a private Blob store with BLOB_READ_WRITE_TOKEN",
+    });
   } else {
     store = new LocalObjectStore(env.localStorageDir);
   }

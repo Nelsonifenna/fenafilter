@@ -1,5 +1,6 @@
 import "server-only";
 import { getEnv } from "../config/env";
+import { logError } from "../errors";
 import type { Fixture, FixtureStats, RecentMatch, TeamData, TeamResolution } from "../domain/schemas";
 import { footballApi, FootballApiError, type ApiFixture } from "./api-football";
 import { resolvePair, toRecentMatches, type SearchCandidate } from "./resolver";
@@ -57,23 +58,22 @@ async function recentMatches(teamId: number): Promise<{ matches: RecentMatch[]; 
   }
   // Plan does not allow `last`: fall back to whole seasons, newest accessible first.
   const start = currentSeasonStartYear();
-  let lastPlanMessage = "";
   for (const season of [start, start - 1, start - 2, start - 3]) {
     try {
       const res = await footballApi.seasonFixtures(teamId, season);
       const matches = toRecentMatches(teamId, res.response as ApiFixture[]).slice(0, RECENT_COUNT);
       if (matches.length > 0) {
-        return { matches, note: season < start ? `Your API-Football plan only allowed season ${season}; data may be outdated.` : null };
+        return { matches, note: season < start ? `Only older match data was available (season ${season}), so figures may be outdated.` : null };
       }
     } catch (e) {
       if (e instanceof FootballApiError && e.kind === "plan") {
-        lastPlanMessage = e.message;
+        logError(`football plan restriction (team ${teamId}, season ${season})`, e);
         continue;
       }
       throw e;
     }
   }
-  return { matches: [], note: lastPlanMessage || "No recent finished matches were available." };
+  return { matches: [], note: "No recent finished matches were available for this club." };
 }
 
 function teamData(resolution: TeamResolution, matches: RecentMatch[], error: string | null): TeamData {
@@ -88,7 +88,8 @@ async function fetchTeam(resolution: TeamResolution): Promise<TeamData> {
     return teamData(resolution, matches, note);
   } catch (e) {
     if (e instanceof FootballApiError && (e.kind === "quota_daily" || e.kind === "auth" || e.kind === "rate_minute")) throw e;
-    return teamData(resolution, [], e instanceof Error ? e.message : "Failed to load matches.");
+    logError(`football team ${resolution.team.id}`, e);
+    return teamData(resolution, [], "Recent matches for this club could not be loaded.");
   }
 }
 

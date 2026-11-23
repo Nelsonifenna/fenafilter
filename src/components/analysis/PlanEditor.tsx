@@ -1,13 +1,12 @@
 "use client";
 
-import { Info, ListFilter } from "lucide-react";
 import type { Condition, FilterPlan } from "@/lib/domain/schemas";
 import { getMetric } from "@/lib/filtering/metrics";
-import { Badge, cn } from "../ui/primitives";
+import { cn } from "../ui/primitives";
 
 /**
- * Shows the structured interpretation of the user's instruction and lets them
- * adjust numeric thresholds. Nothing is evaluated until they confirm.
+ * The structured interpretation of the user's instruction, shown as a
+ * rulebook. Numeric thresholds are editable; nothing runs until confirmed.
  */
 export function PlanEditor({ plan, onChange, disabled }: { plan: FilterPlan; onChange: (p: FilterPlan) => void; disabled?: boolean }) {
   const setAt = (root: "removeWhen" | "keepWhen", path: number[], value: number) => {
@@ -25,12 +24,11 @@ export function PlanEditor({ plan, onChange, disabled }: { plan: FilterPlan; onC
   };
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-line bg-surface-2 p-4">
-        <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-faint"><ListFilter className="size-3.5" aria-hidden /> Interpretation</p>
-        <p className="mt-1.5 text-sm">{plan.summary}</p>
-        <p className="mt-2 text-xs text-muted">
-          Mode: {plan.mode === "remove_matching" ? "remove fixtures that match the removal rule (exceptions are kept)" : "keep only fixtures that match the keep rule"}
+    <div className="space-y-6">
+      <div>
+        <p className="text-[15px] leading-relaxed text-fg/90">{plan.summary}</p>
+        <p className="mt-2 font-mono text-[11px] text-faint">
+          {plan.mode === "remove_matching" ? "Mode: remove matching fixtures, keep exceptions" : "Mode: keep only matching fixtures"}
         </p>
       </div>
 
@@ -46,15 +44,20 @@ export function PlanEditor({ plan, onChange, disabled }: { plan: FilterPlan; onC
       )}
 
       {plan.assumptions.length > 0 && (
-        <div className="rounded-xl border border-info/25 bg-info/5 p-3 text-xs text-fg/85">
-          <p className="mb-1 flex items-center gap-1.5 font-medium text-info"><Info className="size-3.5" aria-hidden /> Assumptions (you can change the thresholds above)</p>
-          <ul className="list-disc space-y-0.5 pl-5">{plan.assumptions.map((a) => <li key={a}>{a}</li>)}</ul>
+        <div>
+          <p className="kicker">Assumptions</p>
+          <ul className="mt-2 space-y-1 text-[13px] text-muted">
+            {plan.assumptions.map((a) => (
+              <li key={a} className="grid grid-cols-[1rem_1fr]"><span className="text-warn" aria-hidden>·</span>{a}</li>
+            ))}
+          </ul>
+          <p className="mt-2 font-mono text-[11px] text-faint">Change any threshold above to override an assumption.</p>
         </div>
       )}
       {plan.unsupported.length > 0 && (
-        <div className="rounded-xl border border-warn/30 bg-warn-soft p-3 text-xs text-fg/85">
-          <p className="mb-1 font-medium text-warn">Not supported with the available data — ignored</p>
-          <ul className="list-disc space-y-0.5 pl-5">{plan.unsupported.map((a) => <li key={a}>{a}</li>)}</ul>
+        <div className="border-l-2 border-warn pl-4">
+          <p className="text-sm font-semibold text-warn">Not supported by the available data, so ignored</p>
+          <ul className="mt-1 space-y-0.5 text-[13px] text-fg/80">{plan.unsupported.map((a) => <li key={a}>{a}</li>)}</ul>
         </div>
       )}
     </div>
@@ -63,23 +66,30 @@ export function PlanEditor({ plan, onChange, disabled }: { plan: FilterPlan; onC
 
 function RuleBlock({ title, tone, children }: { title: string; tone: "danger" | "accent"; children: React.ReactNode }) {
   return (
-    <div className={cn("rounded-xl border p-4", tone === "danger" ? "border-danger/30 bg-danger-soft/40" : "border-accent/30 bg-accent-soft/50")}>
-      <p className={cn("mb-2 text-xs font-semibold uppercase tracking-wider", tone === "danger" ? "text-danger" : "text-accent-strong")}>{title}</p>
-      {children}
-    </div>
+    <section className={cn("border-l-2 pl-4", tone === "danger" ? "border-danger" : "border-accent")}>
+      <p className={cn("kicker", tone === "danger" ? "text-danger" : "text-accent")}>{title}</p>
+      <div className="mt-2">{children}</div>
+    </section>
   );
 }
 
+const CMP: Record<string, string> = { ">=": "≥", "<=": "≤", ">": ">", "<": "<" };
+const CMP_LABEL: Record<string, string> = { ">=": "at least", "<=": "at most", ">": "more than", "<": "less than" };
 const SUBJECT: Record<string, string> = { home: "home team", away: "away team", both: "both teams", either: "either team", match: "match" };
 
 function ConditionView({ c, path, onValue, disabled }: { c: Condition; path: number[]; onValue: (path: number[], v: number) => void; disabled?: boolean }) {
   if (c.kind === "group") {
     return (
-      <div className="space-y-2">
+      <div>
         {c.conditions.map((child, i) => (
           <div key={i}>
-            {i > 0 && <Badge tone="neutral" className="my-1 font-mono">{c.operator}</Badge>}
-            <div className={cn(child.kind === "group" && "rounded-lg border border-line p-2")}>
+            {i > 0 && (
+              <div className="flex items-center gap-3 py-1" aria-label={c.operator === "AND" ? "and" : "or"}>
+                <span className="font-mono text-[11px] font-semibold tracking-[0.14em] text-muted">{c.operator}</span>
+                <span className="h-px flex-1 bg-line" />
+              </div>
+            )}
+            <div className={cn(child.kind === "group" && "border-l border-line-strong pl-3")}>
               <ConditionView c={child} path={[...path, i]} onValue={onValue} disabled={disabled} />
             </div>
           </div>
@@ -90,41 +100,53 @@ function ConditionView({ c, path, onValue, disabled }: { c: Condition; path: num
   if (c.kind === "not") {
     return (
       <div>
-        <Badge tone="neutral" className="mb-1 font-mono">NOT</Badge>
-        <ConditionView c={c.condition} path={[...path, 0]} onValue={onValue} disabled={disabled} />
+        <p className="font-mono text-[11px] font-semibold tracking-[0.14em] text-muted">NOT</p>
+        <div className="border-l border-line-strong pl-3">
+          <ConditionView c={c.condition} path={[...path, 0]} onValue={onValue} disabled={disabled} />
+        </div>
       </div>
     );
   }
-  if (c.kind === "team") return <p className="text-sm">{SUBJECT[c.subject]} is <strong>{c.teams.join(" or ")}</strong></p>;
-  if (c.kind === "competition") return <p className="text-sm">competition is <strong>{c.competitions.join(" or ")}</strong></p>;
+  if (c.kind === "team") {
+    return <p className="py-2 text-sm"><span className="text-muted">{SUBJECT[c.subject]} is</span> {c.teams.join(" or ")}</p>;
+  }
+  if (c.kind === "competition") {
+    return <p className="py-2 text-sm"><span className="text-muted">competition is</span> {c.competitions.join(" or ")}</p>;
+  }
 
   const def = getMetric(c.metric);
   const pct = def && (def.unit === "probability" || def.unit === "rate");
   const label = (def?.label ?? c.metric).replace("X", String(c.line ?? 2.5));
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm">
-      <span>{label}</span>
-      {c.subject !== "match" && <Badge tone="info">{SUBJECT[c.subject]}</Badge>}
-      <span className="font-mono text-muted">{c.comparator}</span>
-      <span className="inline-flex items-center gap-1">
-        <input
-          type="number"
-          aria-label={`Threshold for ${label}`}
-          className="w-20 rounded-lg border border-line bg-ink px-2 py-1 text-right font-mono text-sm focus:border-accent focus:outline-none"
-          value={pct ? Math.round(c.value * 100) : c.value}
-          step={pct ? 5 : 0.1}
-          min={0}
-          max={pct ? 100 : def?.unit === "points" ? 3 : 10}
-          disabled={disabled}
-          onChange={(e) => {
-            const n = Number(e.target.value);
-            if (Number.isFinite(n)) onValue(path, pct ? Math.max(0, Math.min(100, n)) / 100 : Math.max(0, n));
-          }}
-        />
-        {pct && <span className="text-muted">%</span>}
-      </span>
-      {c.thresholdInferred && <Badge tone="warn">assumed</Badge>}
-      {def && <span className="w-full text-xs text-faint">{def.source === "model_estimate" ? "Model estimate" : "Historical frequency"} · {def.description}</span>}
+    <div className="py-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
+        <span className="font-medium">{label}</span>
+        {c.subject !== "match" && <span className="text-muted">· {SUBJECT[c.subject]}</span>}
+        <span className="ml-auto flex items-center gap-1.5">
+          <span className="font-mono text-muted" aria-label={CMP_LABEL[c.comparator]}>{CMP[c.comparator]}</span>
+          <input
+            type="number"
+            aria-label={`Threshold for ${label}`}
+            className="w-16 rounded-[2px] border border-line bg-ink px-2 py-1 text-right font-mono text-sm tnum transition-colors hover:border-line-strong focus:border-accent focus:outline-none disabled:opacity-50"
+            value={pct ? Math.round(c.value * 100) : c.value}
+            step={pct ? 5 : 0.1}
+            min={0}
+            max={pct ? 100 : def?.unit === "points" ? 3 : 10}
+            disabled={disabled}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (Number.isFinite(n)) onValue(path, pct ? Math.max(0, Math.min(100, n)) / 100 : Math.max(0, n));
+            }}
+          />
+          <span className="w-4 font-mono text-muted">{pct ? "%" : ""}</span>
+        </span>
+      </div>
+      {def && (
+        <p className="mt-1 text-[12px] text-faint">
+          <span className={c.thresholdInferred ? "text-warn" : undefined}>{c.thresholdInferred ? "Assumed threshold · " : ""}</span>
+          {def.source === "model_estimate" ? "Model estimate" : "Historical frequency"} — {def.description}
+        </p>
+      )}
     </div>
   );
 }

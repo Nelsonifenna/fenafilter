@@ -1,58 +1,88 @@
 "use client";
 
-import { History, LayoutDashboard, Menu, Settings, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useState } from "react";
 import { Logo } from "../brand/Logo";
 import { ButtonLink, cn } from "../ui/primitives";
 
-const LINKS = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/history", label: "History", icon: History },
-  { href: "/settings", label: "Settings", icon: Settings },
+const APP_LINKS = [
+  { href: "/dashboard", label: "Workspace" },
+  { href: "/history", label: "History" },
+  { href: "/settings", label: "Settings" },
+];
+const SITE_LINKS = [
+  { href: "/#method", label: "Method" },
+  { href: "/#states", label: "Decisions" },
+  { href: "/#examples", label: "Examples" },
+  { href: "/#faq", label: "Questions" },
 ];
 
-/** Top navigation for both marketing and app pages. */
+/** Top bar shared by marketing and app pages. */
 export function AppNav({ variant = "app" }: { variant?: "app" | "marketing" }) {
   const [open, setOpen] = useState(false);
   const marketing = variant === "marketing";
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-ink/80 backdrop-blur supports-[backdrop-filter]:bg-ink/65">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+    <header className="sticky top-0 z-40 border-b border-line bg-ink/90 backdrop-blur-md">
+      <div className="frame flex h-14 items-center gap-8">
         <Logo />
-        <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
+        <nav className="hidden h-full items-stretch md:flex" aria-label="Main">
           {marketing ? (
-            <>
-              <a href="#how-it-works" className="rounded-lg px-3 py-2 text-sm text-muted hover:text-fg">How it works</a>
-              <a href="#features" className="rounded-lg px-3 py-2 text-sm text-muted hover:text-fg">Features</a>
-              <a href="#examples" className="rounded-lg px-3 py-2 text-sm text-muted hover:text-fg">Examples</a>
-              <a href="#faq" className="rounded-lg px-3 py-2 text-sm text-muted hover:text-fg">FAQ</a>
-            </>
+            SITE_LINKS.map((l) => <NavLink key={l.href} href={l.href} label={l.label} active={false} />)
           ) : (
             <Suspense fallback={<AppLinks path="" />}>
               <ActiveAppLinks />
             </Suspense>
           )}
         </nav>
-        <div className="hidden md:block">
-          {marketing ? <ButtonLink href="/dashboard" size="sm">Start analysing</ButtonLink> : <ButtonLink href="/dashboard" size="sm" variant="secondary">New analysis</ButtonLink>}
+        <div className="ml-auto hidden md:block">
+          {marketing ? (
+            <ButtonLink href="/dashboard" size="sm">Start analysing</ButtonLink>
+          ) : (
+            <ButtonLink href="/dashboard" size="sm" variant="secondary">New analysis</ButtonLink>
+          )}
         </div>
-        <button className="grid size-10 place-items-center rounded-lg text-muted hover:bg-surface-2 md:hidden" onClick={() => setOpen((o) => !o)} aria-label={open ? "Close menu" : "Open menu"} aria-expanded={open}>
+        <button
+          className="ml-auto grid size-10 place-items-center text-muted transition-colors hover:text-fg md:hidden"
+          onClick={() => setOpen((o) => !o)}
+          aria-label={open ? "Close menu" : "Open menu"}
+          aria-expanded={open}
+          aria-controls="mobile-nav"
+        >
           {open ? <X className="size-5" /> : <Menu className="size-5" />}
         </button>
       </div>
-      {open && (
-        <nav className="border-t border-line bg-ink px-4 py-3 md:hidden" aria-label="Mobile">
-          {(marketing ? [{ href: "/#how-it-works", label: "How it works" }, { href: "/#features", label: "Features" }, { href: "/#faq", label: "FAQ" }, ...LINKS] : LINKS).map((l) => (
-            <Link key={l.href} href={l.href} onClick={() => setOpen(false)} className="block rounded-lg px-3 py-2.5 text-sm text-muted hover:bg-surface-2 hover:text-fg">
-              {l.label}
-            </Link>
-          ))}
-          <ButtonLink href="/dashboard" className="mt-2 w-full" onClick={() => setOpen(false)}>Start analysing</ButtonLink>
-        </nav>
-      )}
+      <div id="mobile-nav" className="reveal md:hidden" data-open={open}>
+        <div inert={!open}>
+          <nav className="frame border-t border-line pb-4" aria-label="Mobile">
+            {(marketing ? [...SITE_LINKS, ...APP_LINKS] : APP_LINKS).map((l) => (
+              <Link key={l.href} href={l.href} onClick={() => setOpen(false)} className="flex items-center justify-between border-b border-line py-3.5 text-[15px] text-fg/90">
+                {l.label}
+                <span className="font-mono text-xs text-faint" aria-hidden>→</span>
+              </Link>
+            ))}
+            <ButtonLink href="/dashboard" className="mt-4 w-full" onClick={() => setOpen(false)}>Start analysing</ButtonLink>
+          </nav>
+        </div>
+      </div>
     </header>
+  );
+}
+
+function NavLink({ href, label, active }: { href: string; label: string; active: boolean }) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "relative flex items-center px-3 text-[13px] transition-colors",
+        "after:absolute after:inset-x-3 after:bottom-0 after:h-[2px] after:origin-left after:bg-accent after:transition-transform after:duration-200",
+        active ? "text-fg after:scale-x-100" : "text-muted after:scale-x-0 hover:text-fg hover:after:scale-x-100 hover:after:bg-line-strong",
+      )}
+    >
+      {label}
+    </Link>
   );
 }
 
@@ -62,14 +92,5 @@ function ActiveAppLinks() {
 }
 
 function AppLinks({ path }: { path: string }) {
-  return LINKS.map(({ href, label, icon: Icon }) => (
-    <Link
-      key={href}
-      href={href}
-      className={cn("flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors", path.startsWith(href) ? "bg-surface-2 text-fg" : "text-muted hover:text-fg")}
-    >
-      <Icon className="size-4" aria-hidden />
-      {label}
-    </Link>
-  ));
+  return APP_LINKS.map((l) => <NavLink key={l.href} href={l.href} label={l.label} active={path.startsWith(l.href)} />);
 }

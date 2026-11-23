@@ -1,22 +1,26 @@
 import Link from "next/link";
 
-/** FenaFilter mark: a funnel formed from pitch lines. */
-export function LogoMark({ className = "size-7" }: { className?: string }) {
+/**
+ * FenaFilter mark: a penalty box seen from above, with the "filter" line
+ * crossing it — pitch geometry rather than a generic funnel icon.
+ */
+export function LogoMark({ className = "size-6" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 32 32" className={className} aria-hidden>
-      <rect x="1" y="1" width="30" height="30" rx="8" className="fill-accent/15 stroke-accent/50" strokeWidth="1.5" />
-      <path d="M8 9h16l-6 7.5V23l-4 2v-8.5L8 9Z" className="fill-accent" />
-      <circle cx="16" cy="9" r="2.2" className="fill-ink stroke-accent" strokeWidth="1.2" />
+    <svg viewBox="0 0 24 24" className={className} aria-hidden fill="none">
+      <rect x="1" y="1" width="22" height="22" className="fill-accent" />
+      <path d="M6 1v8h12V1M9.5 1v3.5h5V1" className="stroke-accent-ink" strokeWidth="1.6" />
+      <path d="M4 15.5h16" className="stroke-accent-ink" strokeWidth="1.6" />
+      <path d="M8 19.5h8" className="stroke-accent-ink" strokeWidth="1.6" />
     </svg>
   );
 }
 
 export function Logo({ href = "/" }: { href?: string }) {
   return (
-    <Link href={href} className="flex items-center gap-2 font-semibold tracking-tight text-fg" aria-label="FenaFilter home">
+    <Link href={href} className="group flex items-center gap-2.5" aria-label="FenaFilter home">
       <LogoMark />
-      <span>
-        Fena<span className="text-accent">Filter</span>
+      <span className="font-display text-[1.35rem] font-bold uppercase leading-none tracking-[0.02em]">
+        Fena<span className="text-muted transition-colors group-hover:text-fg">Filter</span>
       </span>
     </Link>
   );

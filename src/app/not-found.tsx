@@ -1,15 +1,26 @@
+import { PitchLines } from "@/components/brand/PitchLines";
 import { AppNav } from "@/components/layout/AppNav";
-import { ButtonLink } from "@/components/ui/primitives";
+import { ButtonLink, Kicker } from "@/components/ui/primitives";
 
 export default function NotFound() {
   return (
     <>
       <AppNav variant="marketing" />
-      <main className="mx-auto flex max-w-md flex-1 flex-col items-center justify-center px-4 py-24 text-center">
-        <p className="font-mono text-sm text-accent">404</p>
-        <h1 className="mt-2 text-2xl font-semibold">Page not found</h1>
-        <p className="mt-2 text-muted">This page does not exist, or the analysis has expired.</p>
-        <ButtonLink href="/dashboard" className="mt-6">Go to dashboard</ButtonLink>
+      <main className="relative flex-1 overflow-hidden">
+        <PitchLines className="absolute -right-[10%] top-0 hidden h-full opacity-60 md:block" />
+        <div className="frame relative grid gap-8 py-24 sm:py-32 lg:grid-cols-12">
+          <div className="lg:col-span-7">
+            <Kicker>Error 404</Kicker>
+            <h1 className="mt-5 font-display text-hero font-bold uppercase">
+              Out of <span className="text-accent">play.</span>
+            </h1>
+            <p className="mt-6 max-w-md text-muted">This page does not exist, or the analysis has expired. Analyses are deleted automatically after 24 hours.</p>
+            <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
+              <ButtonLink href="/dashboard">Back to the workspace</ButtonLink>
+              <ButtonLink href="/history" variant="ghost">View history</ButtonLink>
+            </div>
+          </div>
+        </div>
       </main>
     </>
   );

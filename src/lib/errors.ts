@@ -37,16 +37,30 @@ export class AppError extends Error {
   readonly status: number;
   readonly expose: boolean;
   readonly details?: unknown;
+  /**
+   * Technical detail for server logs only (provider, model, configuration).
+   * `message` is what users see and must stay free of implementation details.
+   */
+  readonly internal?: string;
 
-  constructor(code: ErrorCode, message: string, opts: { expose?: boolean; details?: unknown; cause?: unknown } = {}) {
+  constructor(code: ErrorCode, message: string, opts: { expose?: boolean; details?: unknown; cause?: unknown; internal?: string } = {}) {
     super(message, { cause: opts.cause });
     this.name = "AppError";
     this.code = code;
     this.status = STATUS[code];
     this.expose = opts.expose ?? true;
     this.details = opts.details;
+    this.internal = opts.internal;
   }
 }
+
+/** Standard user-facing messages. Deliberately vague about infrastructure. */
+export const USER_MESSAGES = {
+  analysisUnavailable: "Analysis is temporarily unavailable. Please try again later.",
+  statisticsUnavailable: "Football statistics are temporarily unavailable. Please try again later.",
+  uploadsUnavailable: "Uploads are temporarily unavailable. Please try again later.",
+  busy: "FenaFilter is busy right now. Please try again in a few minutes.",
+} as const;
 
 export function toPublicError(err: unknown): { code: ErrorCode; message: string; status: number } {
   if (err instanceof AppError) {
@@ -63,7 +77,9 @@ export function toPublicError(err: unknown): { code: ErrorCode; message: string;
 export function logError(context: string, err: unknown) {
   const msg = err instanceof Error ? err.message : String(err);
   const code = err instanceof AppError ? err.code : "INTERNAL";
-  console.error(`[fenafilter] ${context}: ${code} ${redact(msg)}`);
+  const internal = err instanceof AppError && err.internal ? ` | ${err.internal}` : "";
+  const cause = err instanceof Error && err.cause instanceof Error ? ` | cause: ${err.cause.message}` : "";
+  console.error(`[fenafilter] ${context}: ${code} ${redact(msg + internal + cause)}`);
 }
 
 /** Remove anything that looks like a credential from a string before logging it. */

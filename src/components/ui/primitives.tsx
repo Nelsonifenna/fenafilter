@@ -7,25 +7,26 @@ export function cn(...classes: (string | false | null | undefined)[]) {
 }
 
 /* ------------------------------ Button ------------------------------ */
+/* Square, flat, with a 1px press-down. Lime is reserved for the main action. */
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "sm" | "md" | "lg";
 
 const VARIANTS: Record<Variant, string> = {
-  primary: "bg-accent text-ink hover:bg-accent-strong font-semibold shadow-[0_0_0_1px_rgb(16_185_129/0.4),0_8px_24px_-8px_rgb(16_185_129/0.5)]",
-  secondary: "bg-surface-2 text-fg border border-line hover:bg-surface-3 hover:border-line-strong",
+  primary: "bg-accent text-accent-ink font-semibold hover:bg-accent-strong disabled:bg-surface-3 disabled:text-faint disabled:opacity-100",
+  secondary: "border border-line-strong text-fg hover:border-fg hover:bg-surface-2",
   ghost: "text-muted hover:text-fg hover:bg-surface-2",
-  danger: "bg-danger-soft text-danger border border-danger/30 hover:bg-danger/20",
+  danger: "border border-danger/50 text-danger hover:bg-danger-soft hover:border-danger",
 };
 const SIZES: Record<Size, string> = {
-  sm: "h-8 px-3 text-sm gap-1.5 rounded-lg",
-  md: "h-10 px-4 text-sm gap-2 rounded-xl",
-  lg: "h-12 px-6 text-base gap-2 rounded-xl",
+  sm: "h-8 px-3 text-[13px] gap-1.5",
+  md: "h-10 px-4 text-sm gap-2",
+  lg: "h-12 px-6 text-[15px] gap-2.5",
 };
 
 export function buttonClass(variant: Variant = "primary", size: Size = "md", extra?: string) {
   return cn(
-    "inline-flex items-center justify-center whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50 disabled:pointer-events-none",
+    "inline-flex select-none items-center justify-center whitespace-nowrap rounded-[2px] transition-[background-color,border-color,color,transform] duration-150 active:translate-y-px disabled:pointer-events-none disabled:opacity-40",
     VARIANTS[variant],
     SIZES[size],
     extra,
@@ -34,7 +35,7 @@ export function buttonClass(variant: Variant = "primary", size: Size = "md", ext
 
 export function Button({ variant = "primary", size = "md", loading, className, children, disabled, ...props }: ComponentProps<"button"> & { variant?: Variant; size?: Size; loading?: boolean }) {
   return (
-    <button className={buttonClass(variant, size, className)} disabled={disabled || loading} {...props}>
+    <button className={buttonClass(variant, size, className)} disabled={disabled || loading} aria-busy={loading || undefined} {...props}>
       {loading && <Loader2 className="size-4 animate-spin" aria-hidden />}
       {children}
     </button>
@@ -45,67 +46,98 @@ export function ButtonLink({ variant = "primary", size = "md", className, ...pro
   return <Link className={buttonClass(variant, size, className)} {...props} />;
 }
 
-/* ------------------------------- Card ------------------------------- */
+/* ---------------------------- Structure ----------------------------- */
 
-export function Card({ className, ...props }: ComponentProps<"div">) {
-  return <div className={cn("rounded-2xl border border-line bg-surface shadow-(--shadow-card)", className)} {...props} />;
+/** Flat surface. Use only where a boundary does real work (image stage, editor). */
+export function Panel({ className, ...props }: ComponentProps<"div">) {
+  return <div className={cn("border border-line bg-surface", className)} {...props} />;
 }
 
-export function CardHeader({ title, description, icon, action }: { title: ReactNode; description?: ReactNode; icon?: ReactNode; action?: ReactNode }) {
+export function Kicker({ index, children, className }: { index?: string; children: ReactNode; className?: string }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
-      <div className="flex items-start gap-3 min-w-0">
-        {icon && <div className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">{icon}</div>}
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-fg">{title}</h2>
-          {description && <p className="mt-0.5 text-sm text-muted">{description}</p>}
-        </div>
-      </div>
-      {action}
-    </div>
+    <p className={cn("kicker flex items-baseline gap-3", className)}>
+      {index && <span className="text-accent">{index}</span>}
+      <span>{children}</span>
+    </p>
   );
 }
 
-/* ------------------------------ Badge ------------------------------- */
-
-type Tone = "neutral" | "accent" | "danger" | "warn" | "info";
-const TONES: Record<Tone, string> = {
-  neutral: "bg-surface-2 text-muted border-line",
-  accent: "bg-accent-soft text-accent-strong border-accent/30",
-  danger: "bg-danger-soft text-danger border-danger/30",
-  warn: "bg-warn-soft text-warn border-warn/30",
-  info: "bg-info/10 text-info border-info/30",
-};
-
-export function Badge({ tone = "neutral", className, ...props }: ComponentProps<"span"> & { tone?: Tone }) {
-  return <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium", TONES[tone], className)} {...props} />;
+/** Section heading: hairline rule, numbered kicker, title, optional description and action. */
+export function SectionHead({ index, label, title, description, action, className }: { index?: string; label?: string; title: ReactNode; description?: ReactNode; action?: ReactNode; className?: string }) {
+  return (
+    <header className={cn("border-t border-line pt-4", className)}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          {(index || label) && <Kicker index={index}>{label ?? ""}</Kicker>}
+          <h2 className={cn("font-display text-section font-semibold tracking-tight", (index || label) && "mt-2")}>{title}</h2>
+          {description && <p className="mt-2 max-w-prose text-sm text-muted">{description}</p>}
+        </div>
+        {action && <div className="shrink-0">{action}</div>}
+      </div>
+    </header>
+  );
 }
 
-/* ------------------------------ Alert ------------------------------- */
+/* ----------------------------- Labels ------------------------------- */
 
-export function Alert({ tone = "info", title, children, className }: { tone?: Tone; title?: ReactNode; children?: ReactNode; className?: string }) {
-  const border = { neutral: "border-line", accent: "border-accent/30", danger: "border-danger/30", warn: "border-warn/30", info: "border-info/30" }[tone];
-  const bg = { neutral: "bg-surface-2", accent: "bg-accent-soft", danger: "bg-danger-soft", warn: "bg-warn-soft", info: "bg-info/10" }[tone];
-  const text = { neutral: "text-fg", accent: "text-accent-strong", danger: "text-danger", warn: "text-warn", info: "text-info" }[tone];
+type Tone = "neutral" | "accent" | "danger" | "warn";
+const TONE_TEXT: Record<Tone, string> = { neutral: "text-muted", accent: "text-accent", danger: "text-danger", warn: "text-warn" };
+const TONE_BG: Record<Tone, string> = { neutral: "bg-faint", accent: "bg-accent", danger: "bg-danger", warn: "bg-warn" };
+const TONE_RULE: Record<Tone, string> = { neutral: "border-line-strong", accent: "border-accent", danger: "border-danger", warn: "border-warn" };
+
+/** Small mono tag. Use sparingly — prefer plain text where possible. */
+export function Tag({ tone = "neutral", className, ...props }: ComponentProps<"span"> & { tone?: Tone }) {
+  return <span className={cn("inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.08em]", TONE_TEXT[tone], className)} {...props} />;
+}
+
+/** Status dot + text. */
+export function Dot({ tone = "neutral", pulse, children, className }: { tone?: Tone; pulse?: boolean; children: ReactNode; className?: string }) {
   return (
-    <div role={tone === "danger" ? "alert" : "status"} className={cn("rounded-xl border px-4 py-3 text-sm", border, bg, className)}>
-      {title && <p className={cn("font-semibold", text)}>{title}</p>}
+    <span className={cn("inline-flex items-center gap-2 text-[13px]", className)}>
+      <span className={cn("size-1.5 shrink-0", TONE_BG[tone], pulse && "animate-tick")} aria-hidden />
+      <span className={TONE_TEXT[tone] === "text-muted" ? "text-muted" : "text-fg"}>{children}</span>
+    </span>
+  );
+}
+
+/** Notice with a coloured left rule. Replaces boxed alert cards. */
+export function Notice({ tone = "neutral", title, children, className }: { tone?: Tone; title?: ReactNode; children?: ReactNode; className?: string }) {
+  return (
+    <div role={tone === "danger" ? "alert" : "status"} className={cn("animate-rise border-l-2 bg-surface py-3 pr-4 pl-4 text-sm", TONE_RULE[tone], className)}>
+      {title && <p className={cn("font-semibold", tone === "neutral" ? "text-fg" : TONE_TEXT[tone])}>{title}</p>}
       {children && <div className={cn("text-fg/85", title ? "mt-1" : undefined)}>{children}</div>}
     </div>
   );
 }
 
-/* ----------------------------- Spinner ------------------------------ */
+/** Confidence meter: mono number + 2px bar. */
+export function Meter({ value, label = "confidence" }: { value: number; label?: string }) {
+  const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
+  const tone = pct >= 90 ? "bg-accent" : pct >= 75 ? "bg-fg/70" : "bg-warn";
+  return (
+    <span className="inline-flex items-center gap-2" title={`${pct}% ${label}`}>
+      <span className="relative h-[2px] w-10 bg-line-strong" aria-hidden>
+        <span className={cn("absolute inset-y-0 left-0", tone)} style={{ width: `${pct}%` }} />
+      </span>
+      <span className="tnum font-mono text-[12px] text-muted">
+        {pct}
+        <span className="sr-only">% {label}</span>
+      </span>
+    </span>
+  );
+}
+
+/* ----------------------------- Loading ------------------------------ */
 
 export function Spinner({ className }: { className?: string }) {
   return <Loader2 className={cn("size-4 animate-spin text-accent", className)} aria-label="Loading" />;
 }
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn("animate-pulse rounded-lg bg-surface-2", className)} />;
+  return <div className={cn("animate-pulse bg-surface-2", className)} />;
 }
 
 /* ------------------------------ Inputs ------------------------------ */
 
 export const inputClass =
-  "w-full rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm text-fg placeholder:text-faint focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25 disabled:opacity-60";
+  "w-full rounded-[2px] border border-line bg-ink px-3 py-2 text-sm text-fg placeholder:text-faint transition-colors hover:border-line-strong focus:border-accent focus:outline-none disabled:opacity-50";

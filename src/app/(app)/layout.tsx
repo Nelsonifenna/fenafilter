@@ -5,7 +5,7 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
   return (
     <>
       <AppNav />
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-10">{children}</main>
+      <main className="frame flex-1 pt-8 pb-20 sm:pt-12">{children}</main>
       <SiteFooter />
     </>
   );

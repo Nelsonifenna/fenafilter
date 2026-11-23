@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CheckCircle2, HelpCircle, ImageIcon, ListChecks, MessageSquareText, RotateCcw, ScanSearch, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -10,7 +10,7 @@ import { PlanEditor } from "@/components/analysis/PlanEditor";
 import { ProgressSteps } from "@/components/analysis/ProgressSteps";
 import { InstructionBox } from "@/components/dashboard/InstructionBox";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Alert, Button, ButtonLink, Card, CardHeader, Skeleton } from "@/components/ui/primitives";
+import { Button, ButtonLink, Kicker, Notice, SectionHead, Skeleton } from "@/components/ui/primitives";
 import { api, ApiError } from "@/lib/client/api";
 import { useJob } from "@/lib/client/use-job";
 import type { FilterPlan, Fixture } from "@/lib/domain/schemas";
@@ -51,17 +51,23 @@ export function AnalyzeClient() {
 
   if (error && !job) {
     return (
-      <div className="mx-auto max-w-lg space-y-4 text-center">
-        <Alert tone="danger" title="Analysis unavailable">{error.message}</Alert>
-        <ButtonLink href="/dashboard" variant="secondary"><ArrowLeft className="size-4" /> Back to dashboard</ButtonLink>
+      <div className="max-w-xl space-y-6">
+        <Kicker>Analysis</Kicker>
+        <h1 className="font-display text-title font-bold uppercase">Not available</h1>
+        <Notice tone="danger">{error.message}</Notice>
+        <ButtonLink href="/dashboard" variant="secondary"><ArrowLeft className="size-4" /> Back to workspace</ButtonLink>
       </div>
     );
   }
   if (!job) {
     return (
-      <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
-        <Skeleton className="h-[480px]" />
-        <Skeleton className="h-[480px]" />
+      <div className="grid gap-10 lg:grid-cols-12">
+        <Skeleton className="h-[520px] lg:col-span-5" />
+        <div className="space-y-4 lg:col-span-7">
+          <Skeleton className="h-10 w-2/3" />
+          <Skeleton className="h-40" />
+          <Skeleton className="h-64" />
+        </div>
       </div>
     );
   }
@@ -71,6 +77,7 @@ export function AnalyzeClient() {
   const missingNames = (fixtures ?? []).some((f) => !f.excluded && (!f.homeTeam.trim() || !f.awayTeam.trim()));
   const activeFixtures = (fixtures ?? []).filter((f) => !f.excluded).length;
   const canConfirm = awaiting && fixtures && plan && plan.status === "ok" && !missingNames && activeFixtures > 0 && !busy;
+  const flagged = (fixtures ?? []).filter((f) => !f.excluded && (f.confidence < LOW_CONFIDENCE || f.issues.length > 0)).length;
 
   async function confirm(fx: Fixture[] | null = fixtures, pl: FilterPlan | null = plan) {
     if (!fx || !pl) return;
@@ -102,17 +109,22 @@ export function AnalyzeClient() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-10">
+      <header className="animate-rise flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
         <div>
-          <Link href="/dashboard" className="inline-flex items-center gap-1 text-sm text-muted hover:text-fg"><ArrowLeft className="size-4" /> Dashboard</Link>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Analysis workspace</h1>
+          <Link href="/dashboard" className="inline-flex items-center gap-1.5 font-mono text-[12px] text-muted transition-colors hover:text-fg">
+            <ArrowLeft className="size-3.5" aria-hidden /> Workspace
+          </Link>
+          <h1 className="mt-3 font-display text-title font-bold uppercase">{awaiting ? "Review the read" : "Analysis"}</h1>
         </div>
-        <StatusBadge status={job.status} />
-      </div>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-[12px] text-muted">
+          <span>Ref {job.id.slice(0, 8)}</span>
+          <StatusBadge status={job.status} />
+        </div>
+      </header>
 
       {job.status === "FAILED" && (
-        <Alert tone="danger" title="The analysis stopped">
+        <Notice tone="danger" title="The analysis stopped">
           {job.error?.message ?? "Something went wrong."}
           <div className="mt-3 flex flex-wrap gap-2">
             {job.extraction && (
@@ -120,99 +132,126 @@ export function AnalyzeClient() {
                 <RotateCcw className="size-3.5" /> Retry analysis
               </Button>
             )}
-            <ButtonLink size="sm" variant="secondary" href="/dashboard">Start a new analysis</ButtonLink>
+            <ButtonLink size="sm" variant="ghost" href="/dashboard">Start a new analysis</ButtonLink>
           </div>
-        </Alert>
+        </Notice>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
-        {/* Left: screenshot + progress */}
-        <div className="space-y-6 lg:sticky lg:top-20 lg:self-start">
-          <Card>
-            <CardHeader icon={<ImageIcon className="size-4" />} title="Original screenshot" description={`${job.image.width}×${job.image.height}px${job.extraction ? ` · ${job.extraction.fixtures.length} fixture rows detected${job.extraction.tiles > 1 ? ` (read in ${job.extraction.tiles} sections)` : ""}` : ""}`} />
-            <div className="max-h-[70vh] overflow-auto p-4">
+      <div className="grid gap-x-10 gap-y-12 lg:grid-cols-12">
+        {/* Left: the source image and the live timeline */}
+        <aside className="min-w-0 space-y-8 lg:sticky lg:top-20 lg:col-span-5 lg:self-start">
+          <figure>
+            <div className="flex items-baseline justify-between gap-4 border-t border-line pt-3 pb-3">
+              <Kicker>Source</Kicker>
+              <span className="font-mono text-[11px] text-faint tnum">
+                {job.image.width} × {job.image.height} px
+                {job.extraction ? ` · ${job.extraction.fixtures.length} rows` : ""}
+                {job.extraction && job.extraction.tiles > 1 ? ` · ${job.extraction.tiles} sections` : ""}
+              </span>
+            </div>
+            <div className="max-h-[68vh] overflow-auto border border-line bg-surface p-3">
               <ImageWithBoxes src={job.imageUrl} width={job.image.width} height={job.image.height} items={overlay} selectedId={selected} onSelect={setSelected} />
             </div>
-          </Card>
-          <Card>
-            <CardHeader icon={<ScanSearch className="size-4" />} title="Progress" description="Live status from the server." />
-            <div className="p-3"><ProgressSteps steps={job.steps} /></div>
-          </Card>
-        </div>
+          </figure>
+          <section aria-label="Progress">
+            <div className="flex items-baseline justify-between pb-1">
+              <Kicker>Timeline</Kicker>
+              <span className="font-mono text-[11px] text-faint">Updates live</span>
+            </div>
+            <ProgressSteps steps={job.steps} />
+          </section>
+        </aside>
 
-        {/* Right: review */}
-        <div className="space-y-6">
-          <Card>
-            <CardHeader
-              icon={<MessageSquareText className="size-4" />}
-              title="Your instruction"
-              action={awaiting && !editingInstruction ? <Button size="sm" variant="ghost" onClick={() => setEditingInstruction(true)}>Edit</Button> : undefined}
+        {/* Right: what the AI understood */}
+        <div className="min-w-0 space-y-14 lg:col-span-7">
+          <section>
+            <SectionHead
+              index="01"
+              label="Instruction"
+              title="What you asked"
+              action={awaiting && !editingInstruction && !needsClarification ? <Button size="sm" variant="ghost" onClick={() => setEditingInstruction(true)}>Edit</Button> : undefined}
+              className="mb-5"
             />
-            <div className="space-y-4 p-5">
-              {editingInstruction || needsClarification ? (
-                <>
-                  {needsClarification && (
-                    <Alert tone="warn" title="The AI needs clarification">
-                      <span className="flex items-start gap-2"><HelpCircle className="mt-0.5 size-4 shrink-0" />{plan?.clarificationQuestion}</span>
-                      <span className="mt-1 block text-xs text-muted">Rewrite your instruction below to answer the question.</span>
-                    </Alert>
-                  )}
-                  <InstructionBox id="instruction-edit" value={instruction} onChange={setInstruction} disabled={busy !== null} />
-                  <div className="flex gap-2">
-                    <Button onClick={reinterpret} loading={busy === "reinterpret"} disabled={instruction.trim().length < 3}><Sparkles className="size-4" /> Interpret again</Button>
-                    {editingInstruction && <Button variant="ghost" onClick={() => { setEditingInstruction(false); setInstruction(null); }}>Cancel</Button>}
-                  </div>
-                </>
-              ) : (
-                <p className="rounded-xl border border-line bg-surface-2 px-4 py-3 text-sm">“{job.instruction}”</p>
-              )}
-
-              {job.status === "EXTRACTING" && !plan && <Skeleton className="h-24" />}
-              {job.planError && !plan && <Alert tone="danger" title="Instruction not understood">{job.planError}</Alert>}
-              {plan && plan.status === "ok" && <PlanEditor plan={plan} onChange={setPlan} disabled={!awaiting || busy !== null} />}
-            </div>
-          </Card>
-
-          <Card>
-            <CardHeader icon={<ListChecks className="size-4" />} title="Extracted fixtures" description={awaiting ? "Check every fixture. Correct anything the AI misread before analysis starts." : "Fixtures used for this analysis."} />
-            <div className="p-5">
-              {job.status === "EXTRACTING" ? (
-                <div className="space-y-3">
-                  <p className="text-sm text-muted">Reading fixtures from your screenshot…</p>
-                  {[0, 1, 2].map((i) => <Skeleton key={i} className="h-24" />)}
+            {editingInstruction || needsClarification ? (
+              <div className="space-y-4">
+                {needsClarification && (
+                  <Notice tone="warn" title="A question before continuing">
+                    {plan?.clarificationQuestion}
+                    <span className="mt-1 block text-[12px] text-muted">Rewrite your instruction below to answer it.</span>
+                  </Notice>
+                )}
+                <InstructionBox id="instruction-edit" value={instruction} onChange={setInstruction} disabled={busy !== null} showExamples={false} />
+                <div className="flex gap-2">
+                  <Button onClick={reinterpret} loading={busy === "reinterpret"} disabled={instruction.trim().length < 3}>Interpret again</Button>
+                  {editingInstruction && <Button variant="ghost" onClick={() => { setEditingInstruction(false); setInstruction(null); }}>Cancel</Button>}
                 </div>
-              ) : job.extraction && job.extraction.warnings.length > 0 && awaiting ? (
-                <Alert tone="warn" className="mb-4" title="Notes from the vision model">
-                  <ul className="list-disc pl-5">{job.extraction.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
-                </Alert>
-              ) : null}
+              </div>
+            ) : (
+              <blockquote className="border-l-2 border-line-strong pl-4 text-lg leading-snug text-fg/90">{job.instruction}</blockquote>
+            )}
+          </section>
 
-              {awaiting && fixtures && (
-                <FixtureEditor fixtures={fixtures} onChange={setFixtures} imageHeight={job.image.height} imageWidth={job.image.width} selectedId={selected} onSelect={setSelected} disabled={busy !== null} />
-              )}
-              {!awaiting && job.extraction && job.status !== "EXTRACTING" && (
-                <ul className="divide-y divide-line text-sm">
-                  {job.extraction.fixtures.map((f) => (
-                    <li key={f.id} className="flex items-center justify-between gap-3 py-2">
-                      <span className="min-w-0 truncate">{f.excluded ? <span className="text-faint">Not a fixture</span> : `${f.homeTeam} vs ${f.awayTeam}`}</span>
-                      <span className="shrink-0 text-xs text-faint">{f.competition ?? ""}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </Card>
+          <section>
+            <SectionHead index="02" label="Interpretation" title="The rules that will run" className="mb-5" />
+            {job.status === "EXTRACTING" && !plan && (
+              <div className="space-y-2">
+                <div className="sweep h-[2px] bg-line" />
+                <p className="font-mono text-[12px] text-muted">Interpreting your instruction</p>
+              </div>
+            )}
+            {job.planError && !plan && <Notice tone="danger" title="Instruction not understood">{job.planError}</Notice>}
+            {plan && plan.status === "ok" && <PlanEditor plan={plan} onChange={setPlan} disabled={!awaiting || busy !== null} />}
+          </section>
+
+          <section>
+            <SectionHead
+              index="03"
+              label="Fixtures"
+              title={awaiting ? "Check what was read" : "Fixtures in this analysis"}
+              description={awaiting ? "Correct anything the AI misread. Flagged rows carry an amber edge." : undefined}
+              action={awaiting && fixtures ? <span className="font-mono text-[12px] text-muted tnum">{activeFixtures} active{flagged ? ` · ${flagged} flagged` : ""}</span> : undefined}
+              className="mb-5"
+            />
+            {job.status === "EXTRACTING" ? (
+              <div className="space-y-3">
+                <div className="sweep h-[2px] bg-line" />
+                <p className="font-mono text-[12px] text-muted">Reading fixtures from your screenshot</p>
+                <div className="space-y-px">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-14" />)}</div>
+              </div>
+            ) : job.extraction && job.extraction.warnings.length > 0 && awaiting ? (
+              <Notice tone="warn" className="mb-5" title="Notes from reading your screenshot">
+                <ul className="space-y-0.5">{job.extraction.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+              </Notice>
+            ) : null}
+
+            {awaiting && fixtures && (
+              <FixtureEditor fixtures={fixtures} onChange={setFixtures} imageHeight={job.image.height} imageWidth={job.image.width} selectedId={selected} onSelect={setSelected} disabled={busy !== null} />
+            )}
+            {!awaiting && job.extraction && job.status !== "EXTRACTING" && (
+              <ul className="border-b border-line text-sm">
+                {job.extraction.fixtures.map((f) => (
+                  <li key={f.id} className="grid grid-cols-[2.5rem_1fr_auto] items-baseline gap-3 border-t border-line py-2.5">
+                    <span className="font-mono text-[12px] text-faint tnum">{f.id.slice(-2)}</span>
+                    <span className="min-w-0 truncate">{f.excluded ? <span className="text-faint">Not a fixture</span> : <>{f.homeTeam} <span className="text-faint">v</span> {f.awayTeam}</>}</span>
+                    <span className="font-mono text-[11px] text-faint">{f.competition ?? ""}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
           {awaiting && (
-            <Card className="p-5">
-              {actionError && <Alert tone="danger" className="mb-3">{actionError}</Alert>}
-              <Button size="lg" className="w-full" onClick={() => confirm()} disabled={!canConfirm} loading={busy === "confirm"}>
-                <CheckCircle2 className="size-4" /> Confirm & analyse {activeFixtures} fixture{activeFixtures === 1 ? "" : "s"}
-              </Button>
-              <p className="mt-2 text-center text-xs text-faint">
-                {missingNames ? "Some fixtures are missing team names." : !plan ? "Waiting for a valid interpretation of your instruction." : needsClarification ? "Answer the clarification question first." : "Statistics are fetched only after you confirm."}
-              </p>
-            </Card>
+            <section className="sticky bottom-0 z-20 -mx-[var(--gutter)] border-t border-line-strong bg-ink/95 px-[var(--gutter)] py-4 backdrop-blur lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:backdrop-blur-none">
+              {actionError && <Notice tone="danger" className="mb-3">{actionError}</Notice>}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-[13px] text-muted">
+                  {missingNames ? "Some fixtures are missing team names." : !plan ? "Waiting for a valid interpretation of your instruction." : needsClarification ? "Answer the question above first." : "Statistics are fetched only after you confirm."}
+                </p>
+                <Button size="lg" onClick={() => confirm()} disabled={!canConfirm} loading={busy === "confirm"}>
+                  Confirm {activeFixtures} fixture{activeFixtures === 1 ? "" : "s"} <ArrowRight className="size-4" aria-hidden />
+                </Button>
+              </div>
+            </section>
           )}
         </div>
       </div>

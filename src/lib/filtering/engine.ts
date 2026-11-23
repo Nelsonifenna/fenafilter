@@ -264,10 +264,12 @@ export function decide(mode: FilterPlan["mode"], removeWhen: Tri | undefined, ke
   return "NEEDS_REVIEW";
 }
 
+const CMP_GLYPH: Record<string, string> = { ">=": "≥", "<=": "≤" };
+
 function describe(e: Evidence) {
   if (e.comparator && e.threshold !== null) {
     const thr = formatMetricValue(e.metric, e.threshold);
-    return `${e.label} (${e.subject}) ${e.display} ${e.comparator} ${thr}`;
+    return `${e.label} (${e.subject}) ${e.display} ${CMP_GLYPH[e.comparator] ?? e.comparator} ${thr}`;
   }
   return `${e.label}: ${e.display}`;
 }

@@ -43,7 +43,9 @@ export async function readJson<S extends z.ZodType>(req: Request, schema: S, max
   const parsed = schema.safeParse(data);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
-    throw new AppError("BAD_REQUEST", `Invalid request: ${first?.path.join(".") || "body"} ${first?.message ?? ""}`.trim());
+    throw new AppError("BAD_REQUEST", "Something in this request was not valid. Please refresh the page and try again.", {
+      internal: `Invalid request: ${first?.path.join(".") || "body"} ${first?.message ?? ""}`.trim(),
+    });
   }
   return parsed.data;
 }

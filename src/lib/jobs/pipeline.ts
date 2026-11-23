@@ -7,7 +7,7 @@ import type { Decision, Job } from "../domain/schemas";
 import { AppError, logError } from "../errors";
 import { evaluateFixture, planNeedsStatistics } from "../filtering/engine";
 import { describeCondition } from "../filtering/plan-validation";
-import { FootballApiError } from "../football/api-football";
+import { FootballApiError, publicFootballMessage } from "../football/api-football";
 import { collectFixtureStats } from "../football/service";
 import { renderFiltered } from "../imaging/compose";
 import { getStore, keys } from "../storage";
@@ -63,7 +63,7 @@ export async function advance(ownerId: string, jobId: string): Promise<void> {
     logError(`job ${jobId}`, e);
     const job = await loadJob(ownerId, jobId).catch(() => null);
     if (job) {
-      const message = e instanceof AppError && e.expose ? e.message : e instanceof FootballApiError ? e.message : "The analysis failed unexpectedly. Please try again.";
+      const message = e instanceof AppError && e.expose ? e.message : e instanceof FootballApiError ? publicFootballMessage(e) : "The analysis failed unexpectedly. Please try again.";
       const activeStep = job.steps.find((s) => s.state === "active")?.id;
       let failed: Job = { ...job, status: "FAILED", error: { code: e instanceof AppError ? e.code : "INTERNAL", message }, lease: null };
       if (activeStep) failed = setStep(failed, activeStep, "failed", message);
@@ -221,7 +221,7 @@ export async function renderOutput(job: Job): Promise<Job> {
 
 /* ------------------------------------------------------------------ */
 
-/** Gemini writes a plain-English summary. It explains; it cannot change decisions. */
+/** The AI writes a plain-English summary. It explains; it cannot change decisions. */
 async function summarise(job: Job): Promise<{ text: string; model: string } | null> {
   const env = getEnv();
   if (!env.gemini.apiKey || !job.decisions || !job.extraction || !job.plan) return null;

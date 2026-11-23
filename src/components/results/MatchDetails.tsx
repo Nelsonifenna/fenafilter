@@ -1,155 +1,206 @@
 "use client";
 
-import type { FixtureStats } from "@/lib/domain/schemas";
-import type { MatchDetailView, SplitView, TeamDetailView } from "@/lib/jobs/view";
-import { Badge, cn } from "../ui/primitives";
+import { useState } from "react";
+import type { MatchDetailView, PublicFixtureStats, SplitView, TeamDetailView } from "@/lib/jobs/view";
+import { cn } from "../ui/primitives";
 
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${Math.round(v * 100)}%`);
 const num = (v: number | null | undefined, d = 2) => (v === null || v === undefined ? "—" : v.toFixed(d));
 
-function FormPills({ form }: { form: string }) {
+function Form({ form }: { form: string }) {
+  if (!form) return <span className="text-faint">—</span>;
   return (
-    <span className="inline-flex gap-0.5" aria-label={`Recent form ${form}`}>
+    <span className="inline-flex gap-px" aria-label={`Recent form, most recent first: ${form.split("").join(" ")}`}>
       {form.split("").map((r, i) => (
-        <span key={i} className={cn("grid size-5 place-items-center rounded text-[10px] font-bold", r === "W" ? "bg-accent/20 text-accent-strong" : r === "D" ? "bg-surface-3 text-muted" : "bg-danger/20 text-danger")}>{r}</span>
+        <span key={i} className={cn("grid h-5 w-4 place-items-center font-mono text-[10px] font-semibold", r === "W" ? "bg-accent text-accent-ink" : r === "D" ? "bg-surface-3 text-fg" : "bg-danger/80 text-ink")}>{r}</span>
       ))}
     </span>
   );
 }
 
-const ROWS: { key: keyof SplitView; label: string; fmt: (v: never) => string }[] = [
-  { key: "played", label: "Matches", fmt: (v: number) => String(v) },
-  { key: "record", label: "Record", fmt: (v: string) => v },
-  { key: "avgFor", label: "Goals scored / game", fmt: (v: number | null) => num(v) },
-  { key: "avgAgainst", label: "Goals conceded / game", fmt: (v: number | null) => num(v) },
-  { key: "bttsRate", label: "Both teams scored", fmt: (v: number | null) => pct(v) },
-  { key: "cleanSheetRate", label: "Clean sheets", fmt: (v: number | null) => pct(v) },
-  { key: "failedToScoreRate", label: "Failed to score", fmt: (v: number | null) => pct(v) },
-  { key: "over25Rate", label: "Over 2.5 goals", fmt: (v: number | null) => pct(v) },
-];
-
-function TeamTable({ team, venue }: { team: TeamDetailView; venue: "home" | "away" }) {
+/** Broadcast-style comparison row: home value · label · away value. */
+function Row({ label, home, away, emphasis }: { label: string; home: React.ReactNode; away: React.ReactNode; emphasis?: "home" | "away" | null }) {
   return (
-    <div className="min-w-0">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="font-medium">{team.name}</p>
-        <span className="flex items-center gap-2 text-xs text-muted">
-          <FormPills form={team.form} /> {team.formPointsPerGame !== null && `${team.formPointsPerGame.toFixed(2)} pts/game`}
-        </span>
+    <div className="grid grid-cols-[1fr_minmax(7rem,1.3fr)_1fr] items-center gap-3 border-t border-line py-2">
+      <span className={cn("font-mono text-[13px] tnum", emphasis === "home" ? "text-fg" : "text-fg/80")}>{home}</span>
+      <span className="text-center text-[12px] text-muted">{label}</span>
+      <span className={cn("text-right font-mono text-[13px] tnum", emphasis === "away" ? "text-fg" : "text-fg/80")}>{away}</span>
+    </div>
+  );
+}
+
+/** 1X2 probability bar (model estimate). */
+function OutcomeBar({ home, draw, away }: { home: number; draw: number; away: number }) {
+  const seg = [
+    { k: "Home", v: home, cls: "bg-fg" },
+    { k: "Draw", v: draw, cls: "bg-line-strong" },
+    { k: "Away", v: away, cls: "bg-muted" },
+  ];
+  return (
+    <div>
+      <div className="flex justify-between font-mono text-[12px] tnum">
+        {seg.map((s) => (
+          <span key={s.k} className={cn(s.k === "Draw" && "text-muted")}>
+            <span className="text-faint">{s.k === "Home" ? "1" : s.k === "Draw" ? "X" : "2"} </span>
+            {pct(s.v)}
+          </span>
+        ))}
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="text-faint">
-              <th className="py-1 text-left font-normal" scope="col">Recent matches</th>
-              <th className="py-1 text-right font-normal" scope="col">All</th>
-              <th className={cn("py-1 text-right font-normal", venue === "home" && "text-accent")} scope="col">Home</th>
-              <th className={cn("py-1 text-right font-normal", venue === "away" && "text-accent")} scope="col">Away</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line">
-            {ROWS.map((r) => (
-              <tr key={r.key}>
-                <th scope="row" className="py-1 text-left font-normal text-muted">{r.label}</th>
-                {(["overall", "home", "away"] as const).map((s) => (
-                  <td key={s} className={cn("py-1 text-right font-mono", s === venue && "text-fg", s !== venue && s !== "overall" && "text-muted")}>
-                    {(r.fmt as (v: unknown) => string)(team[s][r.key])}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="mt-1.5 flex h-2 gap-px" role="img" aria-label={`Model estimate: home win ${pct(home)}, draw ${pct(draw)}, away win ${pct(away)}`}>
+        {seg.map((s) => <span key={s.k} className={s.cls} style={{ width: `${s.v * 100}%` }} />)}
       </div>
     </div>
   );
 }
 
-export function MatchDetails({ detail, stats }: { detail: MatchDetailView | undefined; stats: FixtureStats | undefined }) {
+export function MatchDetails({ detail, stats }: { detail: MatchDetailView | undefined; stats: PublicFixtureStats | undefined }) {
+  const [scope, setScope] = useState<"venue" | "overall">("venue");
   if (!stats) return <p className="text-sm text-muted">No football statistics were needed or retrieved for this fixture.</p>;
-  const sides = [
-    { key: "home" as const, data: stats.home, view: detail?.home ?? null },
-    { key: "away" as const, data: stats.away, view: detail?.away ?? null },
-  ];
+
+  const h = detail?.home ?? null;
+  const a = detail?.away ?? null;
+  const split = (t: TeamDetailView | null, venue: "home" | "away"): SplitView | null => (t ? (scope === "venue" ? t[venue] : t.overall) : null);
+  const hs = split(h, "home");
+  const as = split(a, "away");
+  const more = (x: number | null | undefined, y: number | null | undefined, higherIsBetter = true) =>
+    x == null || y == null || x === y ? null : (x > y) === higherIsBetter ? "home" : "away";
+
+  const m = detail?.model ?? null;
+
   return (
-    <div className="space-y-5">
-      <div>
-        <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-faint">
-          Sourced statistics <Badge tone="neutral">Historical match data</Badge>
-        </p>
-        <div className="grid gap-5 md:grid-cols-2">
-          {sides.map(({ key, data, view }) => (
-            <div key={key} className="rounded-xl border border-line bg-surface-2 p-3">
-              <p className="mb-2 text-[11px] uppercase tracking-wider text-faint">{key} team</p>
-              {data.resolution.status === "matched" && data.resolution.team ? (
-                <p className="mb-2 text-xs text-muted">
-                  Identified as <span className="text-fg">{data.resolution.team.name}</span>
-                  {data.resolution.team.country ? ` (${data.resolution.team.country})` : ""} · match method: {data.resolution.method}
-                </p>
+    <div className="space-y-8">
+      {/* Identity */}
+      <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-3">
+        {(["home", "away"] as const).map((side, i) => {
+          const r = stats[side].resolution;
+          const block = (
+            <div key={side} className={cn("min-w-0", i === 1 && "text-right")}>
+              <p className="kicker">{side} team</p>
+              {r.status === "matched" && r.team ? (
+                <>
+                  <p className="mt-1 truncate font-display text-xl font-semibold uppercase">{r.team.name}</p>
+                  <p className="font-mono text-[11px] text-faint">
+                    {r.team.country ?? "Country unknown"}
+                  </p>
+                </>
               ) : (
-                <p className="mb-2 text-xs text-warn">{data.resolution.message ?? `Team “${data.resolution.query}” could not be identified.`}</p>
+                <p className="mt-1 text-[13px] text-warn">{r.message ?? `“${r.query}” could not be identified.`}</p>
               )}
-              {view ? <TeamTable team={view} venue={key} /> : <p className="text-xs text-muted">{data.error ?? `Not enough finished matches (${data.recent.length} found).`}</p>}
-              {data.recent.length > 0 && (
-                <details className="mt-2">
-                  <summary className="cursor-pointer text-xs text-accent">Show {data.recent.length} recent results</summary>
-                  <ul className="mt-2 space-y-0.5 font-mono text-[11px] text-muted">
-                    {data.recent.map((m) => (
-                      <li key={m.fixtureId} className="flex justify-between gap-2">
-                        <span className="truncate">{m.date.slice(0, 10)} {m.venue === "home" ? "vs" : "@"} {m.opponent}</span>
-                        <span className={m.goalsFor > m.goalsAgainst ? "text-accent" : m.goalsFor < m.goalsAgainst ? "text-danger" : ""}>{m.goalsFor}-{m.goalsAgainst}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              )}
-              {data.stale && <p className="mt-2 text-xs text-warn">Most recent match is older than 45 days — data may not reflect current form.</p>}
+              {stats[side].stale && <p className="mt-1 text-[12px] text-warn">Latest match is over 45 days old.</p>}
             </div>
-          ))}
-        </div>
+          );
+          return i === 0 ? [block, <span key="v" className="pt-6 font-mono text-[12px] text-faint">v</span>] : block;
+        })}
       </div>
 
-      <div>
-        <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-faint">
-          Calculated estimates <Badge tone="info">Poisson model</Badge>
-        </p>
-        {detail?.model ? (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {[
-              ["Expected goals (home)", num(detail.model.lambdaHome)],
-              ["Expected goals (away)", num(detail.model.lambdaAway)],
-              ["Both teams score", pct(detail.model.pBtts)],
-              ["Over 2.5 goals", pct(detail.model.pOver25)],
-              ["Home win", pct(detail.model.pHomeWin)],
-              ["Draw", pct(detail.model.pDraw)],
-              ["Away win", pct(detail.model.pAwayWin)],
-              ["Under 2.5 goals", pct(detail.model.pUnder25)],
-              ["Home scores", pct(detail.model.pHomeScores)],
-              ["Away scores", pct(detail.model.pAwayScores)],
-              ["Home clean sheet", pct(detail.model.pHomeCleanSheet)],
-              ["Away clean sheet", pct(detail.model.pAwayCleanSheet)],
-            ].map(([k, v]) => (
-              <div key={k} className="rounded-lg border border-line bg-surface-2 px-3 py-2">
-                <p className="text-[11px] text-faint">{k}</p>
-                <p className="font-mono text-sm">{v}</p>
+      {/* Model estimate */}
+      <section>
+        <div className="flex items-baseline justify-between gap-4">
+          <p className="kicker">Calculated estimates</p>
+          <span className="font-mono text-[11px] text-faint">Statistical model</span>
+        </div>
+        {m ? (
+          <div className="mt-3 space-y-4">
+            <OutcomeBar home={m.pHomeWin} draw={m.pDraw} away={m.pAwayWin} />
+            <div>
+              <Row label="Expected goals" home={num(m.lambdaHome)} away={num(m.lambdaAway)} />
+              <Row label="Scores at least once" home={pct(m.pHomeScores)} away={pct(m.pAwayScores)} />
+              <Row label="Keeps a clean sheet" home={pct(m.pHomeCleanSheet)} away={pct(m.pAwayCleanSheet)} />
+              <div className="grid grid-cols-3 gap-px border-t border-line bg-line pt-px">
+                {[
+                  ["Both teams score", m.pBtts],
+                  ["Over 2.5 goals", m.pOver25],
+                  ["Under 2.5 goals", m.pUnder25],
+                ].map(([k, v]) => (
+                  <div key={k as string} className="bg-ink py-2.5 text-center">
+                    <p className="font-mono text-[15px] tnum">{pct(v as number)}</p>
+                    <p className="mt-0.5 text-[11px] text-muted">{k}</p>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+            {m.notes.map((n) => <p key={n} className="text-[12px] text-muted">{n}</p>)}
           </div>
         ) : (
-          <p className="text-sm text-muted">Not available — both teams need at least 5 recent finished matches.</p>
+          <p className="mt-3 text-sm text-muted">Not available — both clubs need at least 5 recent finished matches.</p>
         )}
-        {detail?.model?.notes.map((n) => <p key={n} className="mt-2 text-xs text-muted">{n}</p>)}
         {stats.prediction && (
-          <p className="mt-3 text-xs text-muted">
-            API-Football prediction (sourced): home {pct(stats.prediction.percentHome)} · draw {pct(stats.prediction.percentDraw)} · away {pct(stats.prediction.percentAway)}
+          <p className="mt-3 font-mono text-[11px] text-muted">
+            Third-party prediction (sourced): 1 {pct(stats.prediction.percentHome)} · X {pct(stats.prediction.percentDraw)} · 2 {pct(stats.prediction.percentAway)}
             {stats.prediction.advice ? ` · “${stats.prediction.advice}”` : ""}
           </p>
         )}
-      </div>
-      <p className="text-[11px] text-faint">
-        Source: {stats.source} · retrieved {new Date(stats.fetchedAt).toLocaleString()}
-        {stats.home.dataAsOf ? ` · latest home-team match ${stats.home.dataAsOf.slice(0, 10)}` : ""}
-        {stats.away.dataAsOf ? ` · latest away-team match ${stats.away.dataAsOf.slice(0, 10)}` : ""}
+      </section>
+
+      {/* Historical figures */}
+      <section>
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <p className="kicker">Sourced statistics</p>
+          <div className="flex border border-line" role="radiogroup" aria-label="Statistics scope">
+            {(["venue", "overall"] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                role="radio"
+                aria-checked={scope === s}
+                onClick={() => setScope(s)}
+                className={cn("px-2.5 py-1 font-mono text-[11px] transition-colors", scope === s ? "bg-fg text-ink" : "text-muted hover:text-fg")}
+              >
+                {s === "venue" ? "Home and away" : "All matches"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="mt-1 text-[12px] text-faint">
+          {scope === "venue" ? "Home team’s home games against the away team’s away games." : "Each club’s most recent finished matches in all competitions."}
+        </p>
+        {hs || as ? (
+          <div className="mt-3">
+            <Row label="Matches" home={hs?.played ?? "—"} away={as?.played ?? "—"} />
+            <Row label="Record" home={hs?.record ?? "—"} away={as?.record ?? "—"} />
+            <Row label="Goals scored per game" home={num(hs?.avgFor)} away={num(as?.avgFor)} emphasis={more(hs?.avgFor, as?.avgFor)} />
+            <Row label="Goals conceded per game" home={num(hs?.avgAgainst)} away={num(as?.avgAgainst)} emphasis={more(hs?.avgAgainst, as?.avgAgainst, false)} />
+            <Row label="Both teams scored" home={pct(hs?.bttsRate)} away={pct(as?.bttsRate)} />
+            <Row label="Clean sheets" home={pct(hs?.cleanSheetRate)} away={pct(as?.cleanSheetRate)} emphasis={more(hs?.cleanSheetRate, as?.cleanSheetRate)} />
+            <Row label="Failed to score" home={pct(hs?.failedToScoreRate)} away={pct(as?.failedToScoreRate)} emphasis={more(hs?.failedToScoreRate, as?.failedToScoreRate, false)} />
+            <Row label="Over 2.5 goals" home={pct(hs?.over25Rate)} away={pct(as?.over25Rate)} />
+            <Row label="Form, latest first" home={<Form form={h?.form ?? ""} />} away={<span className="inline-flex justify-end"><Form form={a?.form ?? ""} /></span>} />
+            <Row label="Points per game" home={num(h?.formPointsPerGame)} away={num(a?.formPointsPerGame)} emphasis={more(h?.formPointsPerGame, a?.formPointsPerGame)} />
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-muted">{stats.home.error ?? stats.away.error ?? "Not enough finished matches for either club."}</p>
+        )}
+      </section>
+
+      {/* Raw results */}
+      {(stats.home.recent.length > 0 || stats.away.recent.length > 0) && (
+        <details className="faq group">
+          <summary className="flex cursor-pointer list-none items-center gap-2 font-mono text-[12px] text-muted transition-colors hover:text-fg">
+            <span className="faq-sign inline-block transition-transform">+</span> Recent results used ({stats.home.recent.length} and {stats.away.recent.length})
+          </summary>
+          <div className="mt-3 grid gap-6 sm:grid-cols-2">
+            {(["home", "away"] as const).map((side) => (
+              <ul key={side} className="font-mono text-[11px] text-muted">
+                <li className="kicker pb-1">{stats[side].resolution.team?.name ?? side}</li>
+                {stats[side].recent.map((r) => (
+                  <li key={r.fixtureId} className="grid grid-cols-[5.5rem_1fr_auto] gap-2 border-t border-line py-1">
+                    <span className="tnum">{r.date.slice(0, 10)}</span>
+                    <span className="truncate">{r.venue === "home" ? "vs" : "at"} {r.opponent}</span>
+                    <span className={cn("tnum", r.goalsFor > r.goalsAgainst ? "text-accent" : r.goalsFor < r.goalsAgainst ? "text-danger" : "text-fg")}>
+                      {r.goalsFor}–{r.goalsAgainst}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ))}
+          </div>
+        </details>
+      )}
+
+      <p className="border-t border-line pt-3 font-mono text-[11px] text-faint">
+        Match data retrieved {new Date(stats.fetchedAt).toLocaleString()}
+        {stats.home.dataAsOf ? ` · home data to ${stats.home.dataAsOf.slice(0, 10)}` : ""}
+        {stats.away.dataAsOf ? ` · away data to ${stats.away.dataAsOf.slice(0, 10)}` : ""}
       </p>
     </div>
   );

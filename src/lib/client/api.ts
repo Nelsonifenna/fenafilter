@@ -32,11 +32,9 @@ const jsonInit = (method: string, data: unknown): RequestInit => ({
 
 export interface SessionInfo {
   ownerId: string;
-  services: {
-    gemini: { configured: boolean; model: string };
-    football: { configured: boolean; predictions: boolean };
-    storage: { mode: "vercel-blob" | "local" };
-  };
+  /** "direct": upload straight to private storage; "server": local development upload. */
+  uploadMode: "direct" | "server";
+  availability: { analysis: boolean; statistics: boolean };
 }
 
 export const api = {

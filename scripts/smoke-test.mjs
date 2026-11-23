@@ -88,9 +88,13 @@ async function main() {
   check("session issued", s.status === 200 && /^[a-f0-9]{32}$/.test(s.body?.ownerId ?? ""));
   check("session cookie is httpOnly-signed", a.cookie.startsWith("ff_sid="));
   const ownerId = s.body.ownerId;
+  const LEAK = /gemini|google|api-football|vercel|blob|model|apiKey|token|secret|storage/i;
+  check("session response names no providers, models or storage", !LEAK.test(JSON.stringify({ ...s.body, ownerId: "" })), JSON.stringify(s.body));
   const h = await a.json("/api/health");
-  check("health reports services without secrets", h.status === 200 && !/apiKey|"token"|secret"/i.test(JSON.stringify(h.body)));
-  check("storage is local mode (required for this test)", s.body.services.storage.mode === "local");
+  check("public health check is minimal", h.status === 200 && JSON.stringify(h.body) === '{"status":"ok"}', JSON.stringify(h.body));
+  const diag = await a.json("/api/health?details=1&verify=gemini");
+  check("diagnostics refused without the secret in production (404)", diag.status === 404 && !LEAK.test(JSON.stringify(diag.body)), `(got ${diag.status})`);
+  check("uploads use local mode (required for this test)", s.body.uploadMode === "server");
 
   console.log("\nUpload validation");
   const fake = new FormData();
@@ -109,11 +113,17 @@ async function main() {
   const imageKey = up.body.pathname;
 
   console.log("\nAnalysis start");
-  const start = await a.json("/api/analyze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ imageKey, instruction: "Remove matches involving Kingsford" }) });
-  if (s.body.services.gemini.configured) {
-    check("analysis accepted (Gemini configured)", start.status === 202);
+  // Only send a real analysis start when it cannot reach the AI service, or when explicitly asked to.
+  const live = process.env.SMOKE_LIVE === "1";
+  const start = !s.body.availability.analysis || live
+    ? await a.json("/api/analyze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ imageKey, instruction: "Remove matches involving Kingsford" }) })
+    : null;
+  if (!s.body.availability.analysis) {
+    check("friendly 503 when analysis is unavailable", start.status === 503 && !LEAK.test(start.body?.error?.message ?? "x key"), `(got ${start.status} ${start.body?.error?.message})`);
+  } else if (live) {
+    check("analysis accepted (live AI request sent)", start?.status === 202);
   } else {
-    check("clear 503 when Gemini is not configured", start.status === 503 && /GEMINI_API_KEY/.test(start.body?.error?.message), `(got ${start.status})`);
+    console.log("  - analysis start not sent: AI is configured and this would spend real quota (set SMOKE_LIVE=1 to include it)");
   }
   const traversal = await a.json("/api/analyze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ imageKey: `uploads/${"0".repeat(32)}/x.png`, instruction: "Remove all" }) });
   check("refuses another session's image (403)", traversal.status === 403, `(got ${traversal.status})`);
@@ -174,6 +184,10 @@ async function main() {
 
   const res = await a.json(`/api/results/${jobId}`);
   check("results endpoint returns report", res.status === 200 && res.body.output?.removedFixtureIds.length === 2);
+  const resultsJson = JSON.stringify(res.body);
+  // Evidence items carry a "source" TYPE (screenshot / historical / estimate) — that is fine.
+  const leakMatch = resultsJson.match(/"model"|"source":"(?!screenshot_text"|historical_match_data"|model_estimate")|"key"|"ownerId"|uploads\/|outputs\/|gemini|api-football/i);
+  check("results JSON has no model names, data source or storage keys", !leakMatch, leakMatch ? `(found ${leakMatch[0]} near: ${resultsJson.slice(Math.max(0, leakMatch.index - 60), leakMatch.index + 60)})` : "");
 
   const out = await a.req(`/api/image/${jobId}/output?download=1`);
   check("download has attachment header", (out.headers.get("content-disposition") ?? "").includes("attachment"));

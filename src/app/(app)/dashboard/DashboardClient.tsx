@@ -1,14 +1,14 @@
 "use client";
 
-import { ArrowRight, Clock, Eraser, ImageIcon, MessageSquareText, ScanSearch } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { InstructionBox } from "@/components/dashboard/InstructionBox";
 import { Dropzone } from "@/components/dashboard/Dropzone";
+import { InstructionBox } from "@/components/dashboard/InstructionBox";
 import { ServiceNotice } from "@/components/ServiceNotice";
 import { jobHref, StatusBadge } from "@/components/StatusBadge";
-import { Alert, Button, Card, CardHeader, Skeleton } from "@/components/ui/primitives";
+import { Button, Kicker, Notice, SectionHead, Skeleton } from "@/components/ui/primitives";
 import { api, ApiError, type SessionInfo } from "@/lib/client/api";
 import { uploadImage } from "@/lib/client/upload";
 import type { JobSummaryView } from "@/lib/jobs/view";
@@ -26,7 +26,7 @@ export function DashboardClient() {
 
   useEffect(() => {
     api.session().then(setSession).catch(() => setPhase({ kind: "error", message: "Could not start a session. Please refresh the page." }));
-    api.history().then((h) => setRecent(h.items.slice(0, 4))).catch(() => setRecent([]));
+    api.history().then((h) => setRecent(h.items.slice(0, 5))).catch(() => setRecent([]));
   }, []);
 
   const busy = phase.kind === "uploading" || phase.kind === "starting";
@@ -45,79 +45,85 @@ export function DashboardClient() {
     }
   }
 
+  const hint = !file ? "Load a screenshot to continue." : instruction.trim().length < 3 ? "Write an instruction to continue." : "Fixtures are read first. You review them before any statistics are fetched.";
+
   return (
-    <div className="space-y-8">
-      <section>
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Welcome to your workspace</h1>
-        <p className="mt-1 text-muted">Upload a football screenshot, describe what to filter, and review the result before downloading.</p>
-      </section>
+    <div className="space-y-14">
+      <header className="animate-rise grid gap-6 lg:grid-cols-12 lg:items-end">
+        <div className="lg:col-span-7">
+          <Kicker>Workspace</Kicker>
+          <h1 className="mt-3 font-display text-title font-bold uppercase">New analysis</h1>
+        </div>
+        <p className="max-w-md text-sm text-muted lg:col-span-4 lg:col-start-9">
+          Load a football screenshot, describe what to filter, and review the result before downloading.
+        </p>
+      </header>
 
-      <ServiceNotice services={session?.services ?? null} />
+      <ServiceNotice availability={session?.availability ?? null} />
 
-      <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-        <Card>
-          <CardHeader icon={<ImageIcon className="size-4" />} title="1. Upload screenshot" description="Fixtures list, betting slip or bookmaker screenshot." />
-          <div className="p-5">
-            <Dropzone file={file} onChange={setFile} disabled={busy} />
-          </div>
-        </Card>
+      <div className="grid gap-x-10 gap-y-14 lg:grid-cols-12">
+        <section className="min-w-0 lg:col-span-7" aria-labelledby="stage-title">
+          <SectionHead index="01" label="Screenshot" title={<span id="stage-title">Load the fixture list</span>} className="mb-6" />
+          <Dropzone file={file} onChange={setFile} disabled={busy} progress={phase.kind === "uploading" ? phase.pct : null} processing={phase.kind === "starting"} />
+        </section>
 
-        <div className="space-y-6">
-          <Card>
-            <CardHeader icon={<MessageSquareText className="size-4" />} title="2. Your instruction" description="Plain English — any rules you like." />
-            <div className="p-5">
-              <InstructionBox value={instruction} onChange={setInstruction} disabled={busy} />
-            </div>
-          </Card>
+        <div className="min-w-0 space-y-12 lg:col-span-5">
+          <section aria-labelledby="instr-title">
+            <SectionHead index="02" label="Instruction" title={<span id="instr-title">Tell it what to filter</span>} className="mb-6" />
+            <InstructionBox value={instruction} onChange={setInstruction} disabled={busy} />
+          </section>
 
-          <Card className="p-5">
+          <section aria-labelledby="run-title">
+            <SectionHead index="03" label="Run" title={<span id="run-title">Read the fixtures</span>} className="mb-6" />
             <Button size="lg" className="w-full" onClick={analyse} disabled={!canSubmit} loading={busy}>
-              {phase.kind === "uploading" ? `Uploading… ${Math.round(phase.pct)}%` : phase.kind === "starting" ? "Starting analysis…" : (<><ScanSearch className="size-4" aria-hidden /> Analyse screenshot</>)}
+              {phase.kind === "uploading" ? `Uploading ${Math.round(phase.pct)}%` : phase.kind === "starting" ? "Starting analysis" : (<>Analyse screenshot <ArrowRight className="size-4" aria-hidden /></>)}
             </Button>
-            {!file && <p className="mt-2 text-center text-xs text-faint">Add a screenshot to continue.</p>}
-            {file && instruction.trim().length < 3 && <p className="mt-2 text-center text-xs text-faint">Write an instruction to continue.</p>}
-            {phase.kind === "error" && <Alert tone="danger" className="mt-3">{phase.message}</Alert>}
-            <div className="mt-4 flex justify-center">
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy || (!file && !instruction)}
-                onClick={() => {
-                  setFile(null);
-                  setInstruction("");
-                  setPhase({ kind: "idle" });
-                  router.replace("/dashboard");
-                }}
-              >
-                <Eraser className="size-3.5" aria-hidden /> Clear workspace
-              </Button>
-            </div>
-          </Card>
+            <p className="mt-3 text-[13px] text-muted">{hint}</p>
+            {phase.kind === "error" && <Notice tone="danger" className="mt-4">{phase.message}</Notice>}
+            <button
+              type="button"
+              className="mt-5 font-mono text-[12px] text-faint transition-colors hover:text-fg disabled:opacity-40"
+              disabled={busy || (!file && !instruction)}
+              onClick={() => {
+                setFile(null);
+                setInstruction("");
+                setPhase({ kind: "idle" });
+                router.replace("/dashboard");
+              }}
+            >
+              Clear workspace
+            </button>
+          </section>
         </div>
       </div>
 
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 font-semibold"><Clock className="size-4 text-accent" aria-hidden /> Previous analyses</h2>
-          <Link href="/history" className="text-sm text-accent hover:text-accent-strong">View all</Link>
-        </div>
+      <section aria-labelledby="recent-title">
+        <SectionHead
+          label="Session"
+          title={<span id="recent-title">Recent analyses</span>}
+          action={<Link href="/history" className="link text-sm">All history</Link>}
+        />
         {recent === null ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-28" />)}</div>
+          <div className="mt-4 space-y-px">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-12" />)}</div>
         ) : recent.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-line px-4 py-8 text-center text-sm text-muted">No analyses yet. Your recent work will appear here for 24 hours.</p>
+          <p className="mt-6 max-w-md text-sm text-muted">Nothing yet. Analyses from this browser appear here for 24 hours.</p>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <ul className="mt-4 border-b border-line">
             {recent.map((j) => (
-              <Link key={j.id} href={jobHref(j.id, j.status)} className="group rounded-xl border border-line bg-surface p-4 transition-colors hover:border-accent/40">
-                <div className="flex items-center justify-between gap-2">
-                  <StatusBadge status={j.status} />
-                  <ArrowRight className="size-4 text-faint group-hover:text-accent" aria-hidden />
-                </div>
-                <p className="mt-3 line-clamp-2 text-sm text-fg/90">“{j.instruction}”</p>
-                <p className="mt-2 text-xs text-faint">{new Date(j.createdAt).toLocaleString()} · {j.fixtures} fixtures</p>
-              </Link>
+              <li key={j.id}>
+                <Link
+                  href={jobHref(j.id, j.status)}
+                  className="group grid grid-cols-[1fr_auto] items-center gap-x-6 gap-y-1 border-t border-line py-3.5 transition-colors hover:bg-surface sm:grid-cols-[9rem_1fr_6rem_11rem_1rem]"
+                >
+                  <span className="font-mono text-[12px] text-faint tnum">{new Date(j.createdAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span>
+                  <ArrowRight className="size-4 justify-self-end text-faint transition-[color,transform] group-hover:translate-x-0.5 group-hover:text-accent sm:order-last" aria-hidden />
+                  <span className="col-span-2 truncate text-sm text-fg/90 sm:col-span-1">{j.instruction}</span>
+                  <span className="font-mono text-[12px] text-muted tnum">{j.fixtures} fixtures</span>
+                  <span className="justify-self-end sm:justify-self-start"><StatusBadge status={j.status} /></span>
+                </Link>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </section>
     </div>

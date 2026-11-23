@@ -1,14 +1,17 @@
 "use client";
 
-import { AlertTriangle, ChevronDown, ChevronUp, EyeOff, Plus } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus } from "lucide-react";
 import type { Fixture } from "@/lib/domain/schemas";
-import { Badge, Button, cn, inputClass } from "../ui/primitives";
+import { Button, cn, Meter } from "../ui/primitives";
 
 export const LOW_CONFIDENCE = 0.75;
+
+const field = "w-full rounded-[2px] border border-transparent bg-transparent px-2 py-1.5 transition-colors hover:border-line focus:border-accent focus:bg-ink focus:outline-none disabled:opacity-50";
 
 /**
  * Lets the user correct what the vision model extracted: team names,
  * competition, date, row boundaries, or mark a row as "not a fixture".
+ * Rendered as a fixture sheet: one row per match, editable in place.
  */
 export function FixtureEditor({
   fixtures,
@@ -65,74 +68,95 @@ export function FixtureEditor({
   };
 
   return (
-    <div className="space-y-3">
-      {fixtures.map((f) => {
-        const low = f.confidence < LOW_CONFIDENCE || f.issues.length > 0;
-        const missing = !f.excluded && (!f.homeTeam.trim() || !f.awayTeam.trim());
-        return (
-          <div
-            key={f.id}
-            onFocusCapture={() => onSelect(f.id)}
-            onClick={() => onSelect(f.id)}
-            className={cn(
-              "rounded-xl border p-4 transition-colors",
-              selectedId === f.id ? "border-accent/60 bg-surface-2" : "border-line bg-surface",
-              f.excluded && "opacity-60",
-            )}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs text-faint">{f.id.replace("match_", "#")}</span>
-                <Badge tone={f.confidence >= 0.9 ? "accent" : f.confidence >= LOW_CONFIDENCE ? "info" : "warn"}>{Math.round(f.confidence * 100)}% confidence</Badge>
-                {f.userEdited && <Badge tone="neutral">Edited</Badge>}
-              </div>
-              <label className="flex cursor-pointer items-center gap-2 text-xs text-muted">
-                <input type="checkbox" className="accent-[var(--color-accent)]" checked={f.excluded} disabled={disabled} onChange={(e) => update(f.id, { excluded: e.target.checked })} />
-                <EyeOff className="size-3.5" aria-hidden /> Not a fixture
-              </label>
-            </div>
+    <div>
+      <div className="kicker hidden grid-cols-[2.5rem_1fr_6rem] gap-3 pb-2 sm:grid" aria-hidden>
+        <span>#</span>
+        <span>Home v away · competition · date</span>
+        <span className="text-right">Read</span>
+      </div>
+      <ul className="border-b border-line">
+        {fixtures.map((f) => {
+          const selected = selectedId === f.id;
+          const missing = !f.excluded && (!f.homeTeam.trim() || !f.awayTeam.trim());
+          const flagged = f.confidence < LOW_CONFIDENCE || f.issues.length > 0;
+          return (
+            <li
+              key={f.id}
+              onFocusCapture={() => onSelect(f.id)}
+              onClick={() => onSelect(f.id)}
+              data-selected={selected}
+              data-state={flagged && !f.excluded ? "NEEDS_REVIEW" : undefined}
+              className={cn("row-state grid grid-cols-[2.5rem_1fr] gap-x-3 border-t border-line py-3 pl-2 transition-colors sm:grid-cols-[2.5rem_1fr_6rem]", f.excluded && "opacity-55")}
+            >
+              <span className={cn("pt-2 font-mono text-[12px] tnum", selected ? "text-accent" : "text-faint")}>{f.id.slice(-2)}</span>
 
-            {low && f.issues.length > 0 && (
-              <ul className="mt-2 space-y-1">
-                {f.issues.map((i) => (
-                  <li key={i} className="flex items-start gap-1.5 text-xs text-warn"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />{i}</li>
-                ))}
-              </ul>
-            )}
+              <div className="min-w-0">
+                {f.excluded ? (
+                  <p className="py-1.5 text-sm text-muted">
+                    <span className="line-through">{f.homeTeam || "?"} v {f.awayTeam || "?"}</span>
+                    <span className="ml-2 font-mono text-[11px] text-faint">not a fixture</span>
+                  </p>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1">
+                      <input aria-label={`${f.id} home team`} className={cn(field, "text-[15px] font-medium", !f.homeTeam.trim() && "border-danger/70")} value={f.homeTeam} placeholder="Home team" disabled={disabled} onChange={(e) => update(f.id, { homeTeam: e.target.value.slice(0, 80) })} />
+                      <span className="px-1 font-mono text-[11px] text-faint">v</span>
+                      <input aria-label={`${f.id} away team`} className={cn(field, "text-[15px] font-medium", !f.awayTeam.trim() && "border-danger/70")} value={f.awayTeam} placeholder="Away team" disabled={disabled} onChange={(e) => update(f.id, { awayTeam: e.target.value.slice(0, 80) })} />
+                    </div>
+                    <div className="mt-0.5 grid grid-cols-2 gap-1">
+                      <input aria-label={`${f.id} competition`} className={cn(field, "font-mono text-[12px] text-muted")} value={f.competition ?? ""} placeholder="Competition" disabled={disabled} onChange={(e) => update(f.id, { competition: e.target.value.slice(0, 80) || null })} />
+                      <input aria-label={`${f.id} date and time`} className={cn(field, "font-mono text-[12px] text-muted")} value={[f.date, f.kickoff].filter(Boolean).join(" ")} placeholder="Date and time" disabled={disabled} onChange={(e) => update(f.id, { date: e.target.value.slice(0, 40) || null, kickoff: null })} />
+                    </div>
+                  </>
+                )}
 
-            {!f.excluded && (
-              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-                <input aria-label={`${f.id} home team`} className={cn(inputClass, !f.homeTeam.trim() && "border-danger/60")} value={f.homeTeam} placeholder="Home team" disabled={disabled} onChange={(e) => update(f.id, { homeTeam: e.target.value.slice(0, 80) })} />
-                <span className="text-center text-xs text-faint">vs</span>
-                <input aria-label={`${f.id} away team`} className={cn(inputClass, !f.awayTeam.trim() && "border-danger/60")} value={f.awayTeam} placeholder="Away team" disabled={disabled} onChange={(e) => update(f.id, { awayTeam: e.target.value.slice(0, 80) })} />
-                <input aria-label={`${f.id} competition`} className={cn(inputClass, "sm:col-span-1")} value={f.competition ?? ""} placeholder="Competition (optional)" disabled={disabled} onChange={(e) => update(f.id, { competition: e.target.value.slice(0, 80) || null })} />
-                <span className="hidden sm:block" />
-                <input aria-label={`${f.id} date`} className={inputClass} value={[f.date, f.kickoff].filter(Boolean).join(" ")} placeholder="Date / time (optional)" disabled={disabled} onChange={(e) => update(f.id, { date: e.target.value.slice(0, 40) || null, kickoff: null })} />
-              </div>
-            )}
-            {missing && <p className="mt-2 text-xs text-danger">Enter both team names, or mark this row as not a fixture.</p>}
+                {flagged && f.issues.length > 0 && !f.excluded && (
+                  <ul className="mt-2 space-y-0.5 px-2">
+                    {f.issues.map((i) => <li key={i} className="text-[12px] text-warn">{i}</li>)}
+                  </ul>
+                )}
+                {missing && <p className="mt-1 px-2 text-[12px] text-danger">Enter both team names, or mark this row as not a fixture.</p>}
 
-            {selectedId === f.id && (
-              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-3 text-xs text-muted">
-                <span>Row position: y {f.box.y}px, height {f.box.height}px</span>
-                <span className="flex items-center gap-1">
-                  Top
-                  <Button size="sm" variant="secondary" aria-label="Move top edge up" disabled={disabled} onClick={() => nudge(f, "top", -4)}><ChevronUp className="size-3.5" /></Button>
-                  <Button size="sm" variant="secondary" aria-label="Move top edge down" disabled={disabled} onClick={() => nudge(f, "top", 4)}><ChevronDown className="size-3.5" /></Button>
-                </span>
-                <span className="flex items-center gap-1">
-                  Bottom
-                  <Button size="sm" variant="secondary" aria-label="Move bottom edge up" disabled={disabled} onClick={() => nudge(f, "bottom", -4)}><ChevronUp className="size-3.5" /></Button>
-                  <Button size="sm" variant="secondary" aria-label="Move bottom edge down" disabled={disabled} onClick={() => nudge(f, "bottom", 4)}><ChevronDown className="size-3.5" /></Button>
-                </span>
+                <div className="reveal" data-open={selected}>
+                  <div inert={!selected}>
+                    <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-dashed border-line px-2 pt-3 font-mono text-[11px] text-muted">
+                      <span className="tnum">y {f.box.y} · h {f.box.height} px</span>
+                      <span className="flex items-center gap-1">
+                        Top edge
+                        <Button size="sm" variant="ghost" className="h-7 px-1.5" aria-label="Move top edge up" disabled={disabled} onClick={() => nudge(f, "top", -4)}><ChevronUp className="size-3.5" /></Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-1.5" aria-label="Move top edge down" disabled={disabled} onClick={() => nudge(f, "top", 4)}><ChevronDown className="size-3.5" /></Button>
+                      </span>
+                      <span className="flex items-center gap-1">
+                        Bottom edge
+                        <Button size="sm" variant="ghost" className="h-7 px-1.5" aria-label="Move bottom edge up" disabled={disabled} onClick={() => nudge(f, "bottom", -4)}><ChevronUp className="size-3.5" /></Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-1.5" aria-label="Move bottom edge down" disabled={disabled} onClick={() => nudge(f, "bottom", 4)}><ChevronDown className="size-3.5" /></Button>
+                      </span>
+                      <label className="ml-auto flex cursor-pointer items-center gap-2 text-fg/80">
+                        <input type="checkbox" className="size-3.5 accent-[var(--color-accent)]" checked={f.excluded} disabled={disabled} onChange={(e) => update(f.id, { excluded: e.target.checked })} />
+                        Not a fixture
+                      </label>
+                    </div>
+                  </div>
+                </div>
               </div>
-            )}
-          </div>
-        );
-      })}
-      <Button variant="secondary" className="w-full" onClick={addFixture} disabled={disabled}>
-        <Plus className="size-4" aria-hidden /> Add a missed fixture
-      </Button>
+
+              <div className="col-start-2 mt-2 flex items-center gap-3 px-2 sm:col-start-auto sm:mt-0 sm:flex-col sm:items-end sm:gap-1 sm:px-0 sm:pt-2.5 sm:pr-2">
+                <Meter value={f.confidence} />
+                {f.userEdited && <span className="font-mono text-[10px] text-faint">edited</span>}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <button
+        type="button"
+        onClick={addFixture}
+        disabled={disabled}
+        className="flex w-full items-center gap-3 border-b border-line py-3 pl-2 text-left text-sm text-muted transition-colors hover:bg-surface hover:text-fg disabled:opacity-40"
+      >
+        <Plus className="size-4 text-accent" aria-hidden /> Add a fixture the AI missed
+      </button>
+      <p className="mt-2 font-mono text-[11px] text-faint">Select a row to adjust its edges or mark it as not a fixture.</p>
     </div>
   );
 }
