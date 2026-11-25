@@ -122,7 +122,7 @@ export function MatchDetails({ detail, stats }: { detail: MatchDetailView | unde
             {m.notes.map((n) => <p key={n} className="text-[12px] text-muted">{n}</p>)}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-muted">Not available — both clubs need at least 5 recent finished matches.</p>
+          <p className="mt-3 text-sm text-muted">Not available, because both clubs need at least 5 recent finished matches.</p>
         )}
         {stats.prediction && (
           <p className="mt-3 font-mono text-[11px] text-muted">

@@ -509,7 +509,7 @@ function buildReason(plan: FilterPlan, d: DecisionValue, r?: RuleEval, k?: RuleE
   if (d === "NEEDS_REVIEW") {
     const u = [...unknown(r), ...unknown(k)][0];
     const why = u?.result.missing[0] ?? "required data is missing";
-    return u ? `Review: “${u.label}” could not be checked — ${why}` : `Review: ${why}`;
+    return u ? `Review: “${u.label}” could not be checked. ${why}` : `Review: ${why}`;
   }
   if (plan.mode === "remove_matching") {
     if (d === "REMOVE") return `Removed: meets your removal criteria ${list(r?.operator === "OR" ? met(r).slice(0, 1) : met(r), true)}.`;

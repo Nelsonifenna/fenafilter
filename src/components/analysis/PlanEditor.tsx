@@ -149,7 +149,7 @@ function ConditionView({ c, path, onValue, disabled }: { c: Condition; path: num
       {def && (
         <p className="mt-1 text-[12px] text-faint">
           <span className={c.thresholdInferred ? "text-warn" : undefined}>{c.thresholdInferred ? "Assumed threshold · " : ""}</span>
-          {def.source === "model_estimate" ? "Model estimate" : "Historical frequency"} — {def.description}
+          {def.source === "model_estimate" ? "Model estimate" : "Historical frequency"}: {def.description}
         </p>
       )}
     </div>

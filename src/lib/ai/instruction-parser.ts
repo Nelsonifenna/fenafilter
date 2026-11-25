@@ -95,7 +95,7 @@ OUTPUT: a single JSON object, no prose, no markdown, exactly this shape:
   "mode": "remove_matching" | "keep_only_matching",
   "removeWhen": Condition | null,
   "keepWhen": Condition | null,
-  "summary": "one or two sentences describing the plan in plain English",
+  "summary": "one or two sentences describing the plan in plain English, without em dashes or en dashes",
   "assumptions": [string],
   "unsupported": [string],
   "minSample": number (optional)

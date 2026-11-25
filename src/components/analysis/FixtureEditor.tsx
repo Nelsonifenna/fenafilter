@@ -59,7 +59,7 @@ export function FixtureEditor({
       odds: [],
       confidence: 1,
       box: { x: 0, y: Math.max(0, y), width: imageWidth, height: Math.min(80, imageHeight - Math.max(0, y)) },
-      issues: ["Added manually — set the team names and row position."],
+      issues: ["Added manually. Set the team names and row position."],
       userEdited: true,
       excluded: false,
     };

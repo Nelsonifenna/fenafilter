@@ -298,7 +298,7 @@ function Report({ job, replace, reload }: { job: JobView; replace: (j: JobView) 
                     {[...byLeague.entries()].sort((a, b) => b[1].n - a[1].n).map(([name, r]) => (
                       <li key={name}>
                         <span className="text-fg">{name}</span>
-                        <span className="text-muted"> — {r.n} analyzed: {r.KEEP} kept, {r.REMOVE} removed{r.NEEDS_REVIEW ? `, ${r.NEEDS_REVIEW} to check` : ""}</span>
+                        <span className="text-muted">: {r.n} analyzed, {r.KEEP} kept, {r.REMOVE} removed{r.NEEDS_REVIEW ? `, ${r.NEEDS_REVIEW} to check` : ""}</span>
                       </li>
                     ))}
                   </ul>

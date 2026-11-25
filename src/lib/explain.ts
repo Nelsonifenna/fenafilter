@@ -89,7 +89,7 @@ export function reviewReason(d: Decision): string {
   return raw
     .replace(/could not be reliably identified \(ambiguous\)\./, "matches several clubs, so FenaFilter could not tell which one is meant.")
     .replace(/could not be reliably identified \(not found\)\./, "could not be found in the football data.")
-    .replace(/\(need (\d+)\)/, "— at least $1 are needed for a fair judgement");
+    .replace(/ \(need (\d+)\)/, ", and at least $1 are needed for a fair judgement");
 }
 
 /** One or two sentences explaining a decision in plain English. */

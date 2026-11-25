@@ -17,7 +17,7 @@ const FEATURES = [
   { title: "Fixture reading", text: "FenaFilter reads team names, competitions, kick-off times and odds, and finds each fixture row on the image." },
   { title: "Rules in your words", text: "“High probability” becomes an explicit, editable threshold. Requests the data cannot support are listed, never guessed." },
   { title: "Real match data", text: "Recent finished results for every club: goals, home and away records, both teams scoring, clean sheets, failures to score and form." },
-  { title: "Estimates you can read", text: "Chances of both teams scoring, over and under lines, and home, draw or away — always labelled separately from historical figures." },
+  { title: "Estimates you can read", text: "Chances of both teams scoring, over and under lines, and home, draw or away. Always labelled separately from historical figures." },
   { title: "Your original image", text: "Nothing is redrawn. Unwanted rows are cut out and everything you keep stays exactly as it was." },
   { title: "Private by default", text: "Screenshots live in private storage, are visible only to your session, and are deleted automatically within a day." },
 ];
@@ -29,10 +29,10 @@ const STATES = [
 ];
 
 const FAQ = [
-  { q: "Which screenshots work?", a: "Screenshots showing football fixtures as rows or cards — bookmaker apps, betting slips, fixture lists and results sites. Clear, uncropped captures work best. Very long screenshots are processed in sections." },
+  { q: "Which screenshots work?", a: "Screenshots showing football fixtures as rows or cards, such as bookmaker apps, betting slips, fixture lists and results sites. Clear, uncropped captures work best. Very long screenshots are processed in sections." },
   { q: "Does FenaFilter predict results?", a: "No. It compares fixtures against your rules using historical match data and a transparent statistical model. Probabilities are estimates based on past results, not guarantees, and nothing here is betting advice." },
   { q: "What if the AI misreads a team name?", a: "Before any analysis you see every extracted fixture with its confidence. You can correct names, competitions and row boundaries, or mark a row as not a fixture." },
-  { q: "What happens when statistics are missing?", a: "The fixture is marked for review with an explanation — for example, a club could not be identified or has too few recent matches. It stays in the image unless you remove it." },
+  { q: "What happens when statistics are missing?", a: "The fixture is marked for review with an explanation, for example when a club could not be identified or has too few recent matches. It stays in the image unless you remove it." },
   { q: "Is my image altered by AI?", a: "No. FenaFilter never redraws your screenshot. Unwanted rows are cut out, and everything you keep stays exactly as it was, at full quality." },
   { q: "Do I need an account?", a: "No. You can analyse screenshots as a guest. Analyses are linked to your browser session and expire automatically after 24 hours." },
 ];
@@ -182,7 +182,7 @@ export default function LandingPage() {
         <section className="frame grid gap-12 py-20 sm:py-28 lg:grid-cols-12">
           <div className="lg:sticky lg:top-24 lg:col-span-4 lg:self-start">
             <h2 className="font-display text-title font-semibold uppercase">Built for the fixture list</h2>
-            <p className="mt-4 max-w-sm text-muted">Reading, rules, statistics and a clean export — designed around how fixture lists actually look.</p>
+            <p className="mt-4 max-w-sm text-muted">Reading, rules, statistics and clean exports, all designed around the way fixture lists actually look.</p>
           </div>
           <dl className="lg:col-span-7 lg:col-start-6">
             {FEATURES.map((f, i) => (

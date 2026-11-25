@@ -68,7 +68,7 @@ describe("explainDecision", () => {
     const review = dec({ decision: "NEEDS_REVIEW", engineDecision: "NEEDS_REVIEW", missingData: ["Rangers could not be reliably identified (ambiguous)."] });
     expect(explainDecision(review, null)).toBe("Rangers matches several clubs, so FenaFilter could not tell which one is meant.");
     expect(reviewReason(dec({ missingData: ["Only 2 recent home games found for Leeds (need 4)."] }))).toBe(
-      "Only 2 recent home games found for Leeds — at least 4 are needed for a fair judgement.",
+      "Only 2 recent home games found for Leeds, and at least 4 are needed for a fair judgement.",
     );
     expect(explainDecision(review, null, "REMOVE")).toBe("You chose to remove this match.");
     expect(explainDecision(dec({ overridden: true, decision: "KEEP" }), null, "KEEP")).toBe("You chose to keep this match.");

@@ -28,5 +28,5 @@ export function retryPending(retry: JobRetryState | null | undefined, now: numbe
 
 export function retryMessage(retry: JobRetryState, now: number): string {
   const secs = Math.max(1, Math.round((new Date(retry.at).getTime() - now) / 1000));
-  return `High demand right now — trying again automatically in ${secs} s (attempt ${retry.count + 1} of ${JOB_RETRY_DELAYS_S.length + 1}).`;
+  return `High demand right now. Trying again automatically in ${secs} s (attempt ${retry.count + 1} of ${JOB_RETRY_DELAYS_S.length + 1}).`;
 }

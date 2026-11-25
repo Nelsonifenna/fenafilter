@@ -21,7 +21,7 @@ const sans = Schibsted_Grotesk({ variable: "--font-schibsted", subsets: ["latin"
 const mono = IBM_Plex_Mono({ variable: "--font-plex-mono", subsets: ["latin"], weight: ["400", "500", "600"] });
 
 export const metadata: Metadata = {
-  title: { default: "FenaFilter — AI football screenshot filtering", template: "%s · FenaFilter" },
+  title: { default: "FenaFilter: AI football screenshot filtering", template: "%s · FenaFilter" },
   description:
     "Upload football fixtures, tell the AI what to remove, and receive a cleaner screenshot backed by real football statistics.",
 };

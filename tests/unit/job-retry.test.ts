@@ -31,7 +31,7 @@ describe("job-level retry scheduling", () => {
 
   it("produces a plain-language progress note without provider details", () => {
     const msg = retryMessage(nextJobRetry(null, now)!, now);
-    expect(msg).toMatch(/trying again automatically in 20 s/);
+    expect(msg).toMatch(/Trying again automatically in 20 s/);
     expect(msg).not.toMatch(/gemini|503|model/i);
   });
 });

@@ -34,7 +34,7 @@ export function validatePlan(input: unknown): PlanValidation {
         }
         if (def.scope === "match" && c.subject !== "match") c.subject = "match";
         if (def.scope === "team" && c.subject === "match") {
-          problems.push(`"${def.label}" must apply to the home team, away team, both or either — not the match.`);
+          problems.push(`"${def.label}" must apply to the home team, away team, both or either, not to the match as a whole.`);
         }
         if ((def.unit === "probability" || def.unit === "rate") && c.value > 1) {
           // Model wrote 60 instead of 0.6.
@@ -88,7 +88,7 @@ export function validatePlan(input: unknown): PlanValidation {
 
 /** Human-readable rendering of a condition tree (used in the UI and for AI summaries). */
 export function describeCondition(c: Condition | null): string {
-  if (!c) return "—";
+  if (!c) return "none";
   switch (c.kind) {
     case "metric": {
       const def = getMetric(c.metric);
